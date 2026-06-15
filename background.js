@@ -16,19 +16,26 @@ function updateBadge(u) {
   const color = getBadgeColor(u.pct);
   chrome.action.setBadgeText({ text: u.pct + '%' });
   chrome.action.setBadgeBackgroundColor({ color });
-  chrome.action.setTitle({
-    title: `Claude: ${u.used}/${u.total} messages (${u.pct}%)` +
-           (u.resetText ? `\nResets in ${u.resetText}` : '')
-  });
+  
+  let titleStr = '';
+  if (u.source === 'api') {
+    titleStr = `Claude Limits: ${u.pct}% used` +
+               (u.resetText ? `\nWeekly resets in ${u.resetText}` : '');
+  } else {
+    titleStr = `Claude: ${u.used}/${u.total} messages (${u.pct}%)` +
+               (u.resetText ? `\nResets in ${u.resetText}` : '');
+  }
+  chrome.action.setTitle({ title: titleStr });
 }
 
 function maybeNotify(u) {
   if (u.pct >= 80 && notifiedAt !== u.pct) {
+    const detail = u.source === 'api' ? `${u.pct}% used` : `${u.pct}% used (${u.used}/${u.total})`;
     chrome.notifications.create('limit-warning', {
       type: 'basic',
       iconUrl: 'icons/icon48.png',
       title: 'Claude limit warning',
-      message: `${u.pct}% used (${u.used}/${u.total}).` +
+      message: `${detail}.` +
                (u.resetText ? ` Resets in ${u.resetText}.` : '')
     });
     notifiedAt = u.pct;
