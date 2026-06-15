@@ -59,16 +59,21 @@ function findResetText() {
 
 function formatResetText(resetsAt) {
   if (!resetsAt) return null;
-  const diff = new Date(resetsAt).getTime() - Date.now();
+  const rawDiff = new Date(resetsAt).getTime() - Date.now();
+  if (rawDiff <= 0) return '0m';
+  
+  // Round to nearest minute to prevent off-by-one errors from millisecond diffs
+  const diff = Math.round(rawDiff / 60000) * 60000;
   if (diff <= 0) return '0m';
+  
   const d = Math.floor(diff / (24 * 3600 * 1000));
   const h = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000));
   const m = Math.floor((diff % (3600 * 1000)) / (60 * 1000));
   
   const parts = [];
   if (d > 0) parts.push(`${d}d`);
-  if (h > 0 || d > 0) parts.push(`${h}h`);
-  parts.push(`${m}m`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0 || parts.length === 0) parts.push(`${m}m`);
   return parts.join(' ');
 }
 
@@ -83,6 +88,53 @@ async function fetchUsageFromAPI() {
     const orgId = org.uuid;
     const orgName = org.name || 'Claude Limits';
 
+    const sub = org.active_billing_subscription || org.subscription || {};
+    const capabilities = org.capabilities || [];
+    const tier = (sub.tier || org.pricing_tier || org.tier || '').toLowerCase();
+
+    // Loop through all organizations to find the highest subscription plan tier
+    let planType = 'Free';
+    let chosenSub = {};
+
+    for (const o of orgs) {
+      const oSub = o.active_billing_subscription || o.subscription || {};
+      const oCapabilities = o.capabilities || [];
+      const oTier = (oSub.tier || o.pricing_tier || o.tier || '').toLowerCase();
+
+      let currentType = 'Free';
+      if (oTier.includes('enterprise') || oCapabilities.some(c => c.toLowerCase().includes('enterprise'))) {
+        currentType = 'Enterprise';
+      } else if (oTier.includes('team') || oCapabilities.some(c => c.toLowerCase().includes('team'))) {
+        currentType = 'Team';
+      } else if (oTier.includes('pro') || oCapabilities.some(c => c.toLowerCase().includes('pro'))) {
+        currentType = 'Pro';
+      } else if (oTier) {
+        currentType = oTier.charAt(0).toUpperCase() + oTier.slice(1);
+      }
+
+      // Elevate planType if a higher one is found
+      if (currentType === 'Enterprise') {
+        planType = 'Enterprise';
+        chosenSub = oSub;
+      } else if (currentType === 'Team' && planType !== 'Enterprise') {
+        planType = 'Team';
+        chosenSub = oSub;
+      } else if (currentType === 'Pro' && planType !== 'Enterprise' && planType !== 'Team') {
+        planType = 'Pro';
+        chosenSub = oSub;
+      } else if (planType === 'Free' && currentType !== 'Free') {
+        planType = currentType;
+        chosenSub = oSub;
+      }
+    }
+
+    const plan = {
+      type: planType,
+      startDate: chosenSub.current_period_start || chosenSub.start_date || null,
+      endDate: chosenSub.current_period_end || chosenSub.end_date || null,
+      provider: chosenSub.provider || chosenSub.payment_processor || null
+    };
+
     const usageResponse = await fetch(`/api/organizations/${orgId}/usage`);
     if (!usageResponse.ok) return null;
     const usageData = await usageResponse.json();
@@ -90,10 +142,12 @@ async function fetchUsageFromAPI() {
     return {
       orgName,
       orgId,
+      plan,
+      debug_org: org,
       ...usageData
     };
   } catch (err) {
-    console.warn('[Claude Limit Tracker] API fetch failed:', err);
+    console.debug('[Claude Limit Tracker] API fetch failed:', err);
     return null;
   }
 }
@@ -127,18 +181,19 @@ async function extractUsage(force = false) {
         used: Math.round(apiData.seven_day?.utilization || 0),
         total: 100,
         resetText: formatResetText(apiData.seven_day?.resets_at),
-        ts: now
+        ts: now,
+        plan: apiData.plan,
+        debug_org: apiData.debug_org
       };
 
       if (JSON.stringify(payload) !== JSON.stringify(lastSent)) {
         lastSent = payload;
-        chrome.runtime.sendMessage({ type: 'USAGE_UPDATE', payload }, () => {
-          if (chrome.runtime.lastError) {
-            // Background may be asleep
-          }
-        });
+        chrome.runtime.sendMessage({ type: 'USAGE_UPDATE', payload })
+          .catch((err) => {
+            // Background may be asleep or popup is closed — ignore.
+          });
       }
-      return;
+      return payload;
     }
   }
 
@@ -151,10 +206,9 @@ async function extractUsage(force = false) {
     if (!usage) {
       if (lastSent && lastSent.source === 'api') {
         // Don't overwrite rich API data with null DOM data
-        return;
+        return lastSent;
       }
-      console.warn('[Claude Limit Tracker] Could not find usage info in DOM.');
-      return;
+      return null;
     }
 
     const { used, total } = usage;
@@ -169,18 +223,26 @@ async function extractUsage(force = false) {
 
     if (JSON.stringify(payload) !== JSON.stringify(lastSent)) {
       lastSent = payload;
-      chrome.runtime.sendMessage({ type: 'USAGE_UPDATE', payload }, () => {
-        if (chrome.runtime.lastError) {
-          // Background may be asleep
-        }
-      });
+      chrome.runtime.sendMessage({ type: 'USAGE_UPDATE', payload })
+        .catch((err) => {
+          // Background may be asleep or popup is closed — ignore.
+        });
     }
+    return payload;
   }
+  return null;
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'REQUEST_REFRESH') {
-    extractUsage(msg.force || false);
+    extractUsage(msg.force || false)
+      .then((payload) => {
+        sendResponse({ success: !!payload, payload });
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: err.toString() });
+      });
+    return true; // Keep message channel open for async response
   }
 });
 
@@ -194,4 +256,6 @@ observer.observe(document.body, {
 setInterval(() => extractUsage(false), 30_000);
 
 extractUsage();
+
+
 

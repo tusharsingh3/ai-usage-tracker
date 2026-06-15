@@ -4,18 +4,41 @@ const refreshIcon = `
   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
 </svg>`;
 
+const sunIcon = `
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="5"></circle>
+  <line x1="12" y1="1" x2="12" y2="3"></line>
+  <line x1="12" y1="21" x2="12" y2="23"></line>
+  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+  <line x1="1" y1="12" x2="3" y2="12"></line>
+  <line x1="21" y1="12" x2="23" y2="12"></line>
+  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+</svg>`;
+
+const moonIcon = `
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+</svg>`;
+
 function formatResetText(resetsAt) {
   if (!resetsAt) return null;
-  const diff = new Date(resetsAt).getTime() - Date.now();
+  const rawDiff = new Date(resetsAt).getTime() - Date.now();
+  if (rawDiff <= 0) return '0m';
+  
+  // Round to nearest minute to prevent off-by-one errors from millisecond diffs
+  const diff = Math.round(rawDiff / 60000) * 60000;
   if (diff <= 0) return '0m';
+  
   const d = Math.floor(diff / (24 * 3600 * 1000));
   const h = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000));
   const m = Math.floor((diff % (3600 * 1000)) / (60 * 1000));
   
   const parts = [];
   if (d > 0) parts.push(`${d}d`);
-  if (h > 0 || d > 0) parts.push(`${h}h`);
-  parts.push(`${m}m`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0 || parts.length === 0) parts.push(`${m}m`);
   return parts.join(' ');
 }
 
@@ -24,6 +47,78 @@ function timeAgo(ts) {
   if (diff < 60) return 'just now';
   if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
   return Math.floor(diff / 3600) + 'h ago';
+}
+
+function formatDate(dateString) {
+  if (!dateString) return '—';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return '—';
+  }
+}
+
+function getColorForPct(pct) {
+  if (pct < 50) {
+    return {
+      bar: 'linear-gradient(90deg, #1D9E75, #34d399)',
+      circle: '#1D9E75'
+    };
+  }
+  if (pct < 80) {
+    return {
+      bar: 'linear-gradient(90deg, #BA7517, #fbbf24)',
+      circle: '#BA7517'
+    };
+  }
+  return {
+    bar: 'linear-gradient(90deg, #E24B4A, #f87171)',
+    circle: '#E24B4A'
+  };
+}
+
+function setupThemeToggle() {
+  const toggleBtn = document.getElementById('theme-toggle');
+  if (!toggleBtn) return;
+
+  // Clone immediately to remove old listeners
+  const newToggleBtn = toggleBtn.cloneNode(true);
+  toggleBtn.replaceWith(newToggleBtn);
+
+  chrome.storage.local.get(['theme'], ({ theme }) => {
+    const currentTheme = theme || 'dark';
+    if (currentTheme === 'light') {
+      document.body.classList.add('light-theme');
+      newToggleBtn.innerHTML = moonIcon;
+      newToggleBtn.title = 'Switch to Dark Theme';
+    } else {
+      document.body.classList.remove('light-theme');
+      newToggleBtn.innerHTML = sunIcon;
+      newToggleBtn.title = 'Switch to Light Theme';
+    }
+  });
+
+  newToggleBtn.addEventListener('click', () => {
+    chrome.storage.local.get(['theme'], ({ theme }) => {
+      const newTheme = (theme || 'dark') === 'light' ? 'dark' : 'light';
+      chrome.storage.local.set({ theme: newTheme }, () => {
+        if (newTheme === 'light') {
+          document.body.classList.add('light-theme');
+        } else {
+          document.body.classList.remove('light-theme');
+        }
+        chrome.storage.local.get(['usage'], ({ usage }) => {
+          renderUI(usage);
+        });
+      });
+    });
+  });
 }
 
 function renderUI(usage) {
@@ -37,10 +132,9 @@ function renderUI(usage) {
             <div class="logo-badge">C</div>
             <div class="app-title">Claude Limits</div>
           </div>
-          <div class="status-badge" style="color: #706a65;">
-            <div class="status-dot" style="background-color: #706a65; box-shadow: none;"></div>
-            <span>Offline</span>
-          </div>
+          <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">
+            <!-- sun/moon icon -->
+          </button>
         </div>
         <div class="bento-card">
           <div class="empty-view">
@@ -51,11 +145,14 @@ function renderUI(usage) {
         <button class="btn-refresh" id="refresh-btn" type="button">
           ${refreshIcon} <span>Refresh Usage Data</span>
         </button>
-        <div class="footer-row" style="justify-content: center;">
-          <button class="footer-link" id="settings-btn" style="background:none; border:none; cursor:pointer;" type="button">Settings</button>
+        <div class="footer-row">
+          <span>Not updated</span>
+          <button class="footer-link" id="settings-btn" type="button">Settings</button>
+          <a class="footer-link" href="https://claude.ai" target="_blank">Open Claude →</a>
         </div>
       </div>`;
     
+    setupThemeToggle();
     document.getElementById('settings-btn').addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
     });
@@ -104,36 +201,34 @@ function renderUI(usage) {
 
     let leftLabel = 'Session';
     let leftPct = sessionPct;
-    let leftColor = '#58b385'; // mint green
     let leftResetStr = sessionResetStr;
 
     let rightLabel = orgName;
     let rightPct = orgPct;
-    let rightColor = '#dfb86c'; // gold
     let rightResetStr = orgResetStr;
 
     // Dynamically elevate the highest percentage limit to the top card to match the badge
     if (sessionPct > weeklyPct && sessionPct > orgPct) {
-      // Session is highest
       topLabel = 'SESSION LIMIT';
       topPct = sessionPct;
       topResetStr = sessionResetText ? `Resets in ${sessionResetText}` : 'Resets in —';
 
       leftLabel = 'Weekly';
       leftPct = weeklyPct;
-      leftColor = '#e58c77'; // coral
       leftResetStr = weeklyResetStr;
     } else if (orgPct > weeklyPct && orgPct > sessionPct) {
-      // Org is highest
       topLabel = `${orgName.toUpperCase()} LIMIT`;
       topPct = orgPct;
       topResetStr = orgResetText ? `Resets in ${orgResetText}` : 'Resets in —';
 
       rightLabel = 'Weekly';
       rightPct = weeklyPct;
-      rightColor = '#e58c77'; // coral
       rightResetStr = weeklyResetStr;
     }
+
+    // Resolve dynamic colors based on percentages
+    const leftColor = getColorForPct(leftPct).circle;
+    const rightColor = getColorForPct(rightPct).circle;
 
     const leftOffset = (113.1 - (113.1 * leftPct) / 100).toFixed(1);
     const rightOffset = (113.1 - (113.1 * rightPct) / 100).toFixed(1);
@@ -146,7 +241,7 @@ function renderUI(usage) {
           <div class="circle-card-content">
             <div class="circle-svg-wrap">
               <svg width="44" height="44" viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" fill="none" stroke="#2b2826" stroke-width="4"/>
+                <circle cx="22" cy="22" r="18" fill="none" stroke="var(--circle-empty)" stroke-width="4"/>
                 <circle cx="22" cy="22" r="18" fill="none"
                   stroke="${leftColor}" stroke-width="4" stroke-linecap="round"
                   stroke-dasharray="113.1" stroke-dashoffset="${leftOffset}"/>
@@ -166,7 +261,7 @@ function renderUI(usage) {
           <div class="circle-card-content">
             <div class="circle-svg-wrap">
               <svg width="44" height="44" viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" fill="none" stroke="#2b2826" stroke-width="4"/>
+                <circle cx="22" cy="22" r="18" fill="none" stroke="var(--circle-empty)" stroke-width="4"/>
                 <circle cx="22" cy="22" r="18" fill="none"
                   stroke="${rightColor}" stroke-width="4" stroke-linecap="round"
                   stroke-dasharray="113.1" stroke-dashoffset="${rightOffset}"/>
@@ -184,6 +279,7 @@ function renderUI(usage) {
     // Fallback/Scraped DOM view
     const usageOffset = (113.1 - (113.1 * pct) / 100).toFixed(1);
     const rem = total - used;
+    const fallbackColor = getColorForPct(pct);
 
     middleGridHtml = `
       <div class="grid-row">
@@ -193,9 +289,9 @@ function renderUI(usage) {
           <div class="circle-card-content">
             <div class="circle-svg-wrap">
               <svg width="44" height="44" viewBox="0 0 44 44">
-                <circle cx="22" cy="22" r="18" fill="none" stroke="#2b2826" stroke-width="4"/>
+                <circle cx="22" cy="22" r="18" fill="none" stroke="var(--circle-empty)" stroke-width="4"/>
                 <circle cx="22" cy="22" r="18" fill="none"
-                  stroke="#e58c77" stroke-width="4" stroke-linecap="round"
+                  stroke="${fallbackColor.circle}" stroke-width="4" stroke-linecap="round"
                   stroke-dasharray="113.1" stroke-dashoffset="${usageOffset}"/>
               </svg>
               <div class="circle-text-center">${pct}%</div>
@@ -226,6 +322,72 @@ function renderUI(usage) {
   const chargesActive = typeof credits === 'number' ? credits > 0 : false;
   const chargesBadgeText = chargesActive ? 'Charges active' : 'No charges';
 
+  // Plan details extraction
+  const plan = usage.plan || { type: 'Free', startDate: null, endDate: null };
+  const planType = plan.type || 'Free';
+  const startDateStr = formatDate(plan.startDate);
+  const endDateStr = formatDate(plan.endDate);
+
+  let billingText = '';
+  if (planType === 'Free') billingText = '$0/mo';
+  else if (planType === 'Pro') billingText = '$20/mo';
+  else if (planType === 'Team') billingText = '$30/mo';
+  else if (planType === 'Enterprise') billingText = 'Custom';
+  else billingText = 'Active';
+
+  // Determine what to render in the date section of the card
+  let dateSectionHtml = '';
+  if (planType === 'Free') {
+    dateSectionHtml = `
+          <div class="plan-dates">
+            <div class="plan-date-col">
+              <span class="date-label">Started</span>
+              <span class="date-value">—</span>
+            </div>
+            <div class="plan-date-col">
+              <span class="date-label">Ends</span>
+              <span class="date-value">—</span>
+            </div>
+          </div>`;
+  } else if (startDateStr === '—') {
+    let providerName = 'iOS';
+    let deviceName = 'iOS device';
+
+    const detectProvider = (plan.provider || '').toLowerCase();
+    if (detectProvider.includes('android') || detectProvider.includes('google') || detectProvider.includes('play')) {
+      providerName = 'Android';
+      deviceName = 'Android device';
+    } else if (detectProvider.includes('stripe') || detectProvider.includes('web')) {
+      providerName = 'Web';
+      deviceName = 'web account settings';
+    }
+
+    dateSectionHtml = `
+          <div class="plan-dates-warning" style="font-size: 10px; color: var(--label-color); border-top: 1px solid var(--bar-border); padding-top: 8px; margin-top: 4px; line-height: 1.4; display: flex; align-items: flex-start; gap: 6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>Subscribed via ${providerName} app. Manage subscription on your ${deviceName}.</span>
+          </div>`;
+  } else {
+    dateSectionHtml = `
+          <div class="plan-dates">
+            <div class="plan-date-col">
+              <span class="date-label">Started</span>
+              <span class="date-value">${startDateStr}</span>
+            </div>
+            <div class="plan-date-col">
+              <span class="date-label">Ends</span>
+              <span class="date-value">${endDateStr}</span>
+            </div>
+          </div>`;
+  }
+
+  const planBadgeClass = `plan-${planType.toLowerCase()}`;
+  const topColor = getColorForPct(topPct);
+
   root.innerHTML = `
     <div class="app-container">
       <!-- Header -->
@@ -234,18 +396,17 @@ function renderUI(usage) {
           <div class="logo-badge">C</div>
           <div class="app-title">Claude Limits</div>
         </div>
-        <div class="status-badge">
-          <div class="status-dot"></div>
-          <span>Live</span>
-        </div>
+        <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">
+          <!-- sun/moon icon -->
+        </button>
       </div>
 
       <!-- Top Usage Card (Highest Limit) -->
       <div class="bento-card">
         <span class="card-label">${topLabel}</span>
-        <span class="weekly-value">${topPct}%</span>
+        <span class="weekly-value" style="color: ${topColor.circle}">${topPct}%</span>
         <div class="progress-bar-container">
-          <div class="progress-bar-fill" style="width: ${topPct}%"></div>
+          <div class="progress-bar-fill" style="width: ${topPct}%; background: ${topColor.bar};"></div>
         </div>
         <span class="reset-text">${topResetStr}</span>
       </div>
@@ -264,6 +425,18 @@ function renderUI(usage) {
         </div>
       </div>
 
+      <!-- Plan Details Card -->
+      <div class="bento-card plan-details-card">
+        <span class="card-label">Plan Details</span>
+        <div class="plan-details-content">
+          <div class="plan-info-row">
+            <span class="plan-type-badge ${planBadgeClass}">${planType}</span>
+            <span class="plan-billing-cycle">${billingText}</span>
+          </div>
+          ${dateSectionHtml}
+        </div>
+      </div>
+
       <!-- Action Button -->
       <button class="btn-refresh" id="refresh-btn" type="button">
         ${refreshIcon} <span>Refresh Usage Data</span>
@@ -272,12 +445,12 @@ function renderUI(usage) {
       <!-- Footer Info -->
       <div class="footer-row">
         <span>Updated ${ts ? timeAgo(ts) : '—'}</span>
-        <div style="display: flex; gap: 10px;">
-          <button class="footer-link" id="settings-btn" style="background:none; border:none; cursor:pointer;" type="button">Settings</button>
-          <a class="footer-link" href="https://claude.ai" target="_blank">Open Claude →</a>
-        </div>
+        <button class="footer-link" id="settings-btn" type="button">Settings</button>
+        <a class="footer-link" href="https://claude.ai" target="_blank">Open Claude →</a>
       </div>
     </div>`;
+
+  setupThemeToggle();
 
   // Bind events
   document.getElementById('settings-btn').addEventListener('click', () => {
@@ -295,19 +468,28 @@ function triggerRefresh() {
 
   chrome.tabs.query({ url: 'https://claude.ai/*' }, (tabs) => {
     if (tabs && tabs.length > 0) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: 'REQUEST_REFRESH', force: true }, () => {
-        if (chrome.runtime.lastError) {
-          // Ignore tab refresh errors if connection fails
-        }
-        
-        // Give content script 1s to fetch from API and save
-        setTimeout(() => {
-          chrome.storage.local.get(['usage'], ({ usage: updatedUsage }) => {
-            btn.classList.remove('loading');
-            renderUI(updatedUsage);
+      // Prefer the active tab, then any non-discarded tab, fallback to tabs[0]
+      const targetTab = tabs.find(t => t.active) || tabs.find(t => !t.discarded) || tabs[0];
+      
+      chrome.tabs.sendMessage(targetTab.id, { type: 'REQUEST_REFRESH', force: true })
+        .then((response) => {
+          btn.classList.remove('loading');
+          if (!response || !response.success) {
+            chrome.storage.local.get(['usage'], ({ usage: savedUsage }) => {
+              renderUI(savedUsage);
+            });
+            return;
+          }
+          if (response.payload) {
+            renderUI(response.payload);
+          }
+        })
+        .catch((err) => {
+          btn.classList.remove('loading');
+          chrome.storage.local.get(['usage'], ({ usage: savedUsage }) => {
+            renderUI(savedUsage);
           });
-        }, 1000);
-      });
+        });
     } else {
       btn.innerHTML = `${refreshIcon} <span>No Claude tab open</span>`;
       setTimeout(() => {
@@ -320,7 +502,19 @@ function triggerRefresh() {
   });
 }
 
+// Listen to storage changes reactively to sync updates
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.usage) {
+    renderUI(changes.usage.newValue);
+  }
+});
+
 // Initial draw
-chrome.storage.local.get(['usage'], ({ usage }) => {
+chrome.storage.local.get(['usage', 'theme'], ({ usage, theme }) => {
+  if (theme === 'light') {
+    document.body.classList.add('light-theme');
+  } else {
+    document.body.classList.remove('light-theme');
+  }
   renderUI(usage);
 });

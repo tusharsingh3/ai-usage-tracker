@@ -8,16 +8,63 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Theme CSS Variables */
+    body {
+      --bg-color: #121110;
+      --text-color: #f5f2eb;
+      --card-bg: #1c1a19;
+      --card-border: #282523;
+      --card-border-hover: #383431;
+      --label-color: #968f89;
+      --text-white: #ffffff;
+      --bar-bg: #2b2826;
+      --bar-border: #33302d;
+      --btn-bg: #1c1a19;
+      --btn-hover: #282523;
+      --btn-text: #968f89;
+      --btn-text-hover: #ffffff;
+      --footer-text: #706a65;
+      --footer-link: #968f89;
+      --footer-link-hover: #ffffff;
+      --empty-link: #e58c77;
+      --empty-link-hover: #f4b2a3;
+      --circle-empty: #2b2826;
+    }
+
+    body.light-theme {
+      --bg-color: #f9f8f6;
+      --text-color: #1c1a19;
+      --card-bg: #ffffff;
+      --card-border: #e5e2de;
+      --card-border-hover: #d5d2ce;
+      --label-color: #706a65;
+      --text-white: #121110;
+      --bar-bg: #f0ede9;
+      --bar-border: #e5e2de;
+      --btn-bg: #ffffff;
+      --btn-hover: #f0ede9;
+      --btn-text: #706a65;
+      --btn-text-hover: #121110;
+      --footer-text: #968f89;
+      --footer-link: #706a65;
+      --footer-link-hover: #121110;
+      --empty-link: #e58c77;
+      --empty-link-hover: #d97b65;
+      --circle-empty: #f0ede9;
+    }
+
     body {
       width: 320px;
       font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background-color: #121110;
-      color: #f5f2eb;
-      padding: 16px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      padding: 12px;
       overflow: hidden;
+      transition: background-color 0.3s ease, color 0.3s ease;
     }
 
-    /* Scrollbar styling just in case */
+    /* Scrollbar styling */
     ::-webkit-scrollbar {
       width: 4px;
     }
@@ -25,7 +72,7 @@
       background: transparent;
     }
     ::-webkit-scrollbar-thumb {
-      background: #282523;
+      background: var(--card-border);
       border-radius: 2px;
     }
 
@@ -33,7 +80,7 @@
     .app-container {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
     }
 
     /* Header */
@@ -41,7 +88,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 4px;
+      margin-bottom: 2px;
     }
 
     .logo-section {
@@ -65,9 +112,9 @@
     }
 
     .app-title {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
-      color: #ffffff;
+      color: var(--text-white);
       letter-spacing: -0.2px;
     }
 
@@ -95,35 +142,54 @@
       100% { transform: scale(0.95); opacity: 0.5; }
     }
 
+    /* Theme Toggle Button */
+    .theme-toggle-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--btn-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .theme-toggle-btn:hover {
+      background: var(--btn-hover);
+      color: var(--btn-text-hover);
+    }
+
     /* Bento Card Base */
     .bento-card {
-      background: #1c1a19;
-      border: 1px solid #282523;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
       border-radius: 14px;
-      padding: 14px;
+      padding: 10px;
       display: flex;
       flex-direction: column;
-      transition: border-color 0.2s ease, transform 0.2s ease;
+      transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.3s ease;
     }
 
     .bento-card:hover {
-      border-color: #383431;
+      border-color: var(--card-border-hover);
     }
 
     .card-label {
-      font-size: 9px;
+      font-size: 8px;
       font-weight: 600;
-      color: #968f89;
+      color: var(--label-color);
       text-transform: uppercase;
       letter-spacing: 0.8px;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     /* Large Weekly Card */
     .weekly-value {
-      font-size: 38px;
+      font-size: 22px;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--text-white);
       line-height: 1.1;
       letter-spacing: -0.5px;
     }
@@ -131,12 +197,12 @@
     .progress-bar-container {
       width: 100%;
       height: 8px;
-      background-color: #2b2826;
+      background-color: var(--bar-bg);
       border-radius: 10px;
       overflow: hidden;
-      margin-top: 12px;
-      margin-bottom: 8px;
-      border: 0.5px solid #33302d;
+      margin-top: 8px;
+      margin-bottom: 4px;
+      border: 0.5px solid var(--bar-border);
     }
 
     .progress-bar-fill {
@@ -147,8 +213,8 @@
     }
 
     .reset-text {
-      font-size: 11px;
-      color: #968f89;
+      font-size: 10px;
+      color: var(--label-color);
       font-weight: 400;
     }
 
@@ -169,14 +235,16 @@
 
     .circle-svg-wrap {
       position: relative;
-      width: 44px;
-      height: 44px;
+      width: 38px;
+      height: 38px;
       flex-shrink: 0;
     }
 
     .circle-svg-wrap svg {
       transform: rotate(-90deg);
       display: block;
+      width: 100%;
+      height: 100%;
     }
 
     .circle-text-center {
@@ -185,9 +253,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 9px;
+      font-size: 8px;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--text-white);
     }
 
     .circle-details {
@@ -198,15 +266,15 @@
     }
 
     .circle-val-text {
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--text-white);
       line-height: 1.2;
     }
 
     .circle-sub-text {
-      font-size: 9px;
-      color: #968f89;
+      font-size: 8px;
+      color: var(--label-color);
       line-height: 1.1;
       white-space: nowrap;
       overflow: hidden;
@@ -227,14 +295,14 @@
     }
 
     .extra-charges-val {
-      font-size: 18px;
+      font-size: 15px;
       font-weight: 700;
-      color: #ffffff;
+      color: var(--text-white);
       line-height: 1.2;
     }
 
     .extra-charges-badge {
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
       color: #58b385;
       background-color: rgba(88, 179, 133, 0.08);
@@ -245,16 +313,88 @@
       text-transform: capitalize;
     }
 
+    /* Plan Details Card */
+    .plan-details-card {
+      padding: 12px 14px;
+    }
+    .plan-details-content {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .plan-info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .plan-type-badge {
+      font-size: 9px;
+      font-weight: 700;
+      color: #121110;
+      background-color: #e58c77;
+      border-radius: 6px;
+      padding: 3px 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      line-height: 1.2;
+    }
+    .plan-type-badge.plan-free {
+      background-color: var(--label-color);
+      color: var(--card-bg);
+    }
+    .plan-type-badge.plan-pro {
+      background-color: #dfb86c;
+      color: #121110;
+    }
+    .plan-type-badge.plan-team {
+      background-color: #58b385;
+      color: #121110;
+    }
+    .plan-type-badge.plan-enterprise {
+      background-color: #534ab7;
+      color: #ffffff;
+    }
+    .plan-billing-cycle {
+      font-size: 10px;
+      color: var(--label-color);
+      font-weight: 500;
+    }
+    .plan-dates {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      border-top: 1px solid var(--bar-border);
+      padding-top: 8px;
+    }
+    .plan-date-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .date-label {
+      font-size: 8px;
+      font-weight: 600;
+      color: var(--label-color);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .date-value {
+      font-size: 10px;
+      font-weight: 500;
+      color: var(--text-white);
+    }
+
     /* Refresh Button */
     .btn-refresh {
       width: 100%;
-      background: #1c1a19;
-      border: 1px solid #282523;
+      background: var(--btn-bg);
+      border: 1px solid var(--card-border);
       border-radius: 12px;
-      color: #968f89;
+      color: var(--btn-text);
       padding: 10px;
       font-family: inherit;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.25s ease;
@@ -265,9 +405,9 @@
     }
 
     .btn-refresh:hover {
-      background: #282523;
-      color: #ffffff;
-      border-color: #383431;
+      background: var(--btn-hover);
+      color: var(--btn-text-hover);
+      border-color: var(--card-border-hover);
     }
 
     .btn-refresh:active {
@@ -291,27 +431,39 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 10px;
-      color: #706a65;
+      font-size: 11px;
+      color: var(--footer-text);
       padding: 0 4px;
     }
 
+    .footer-row span {
+      font-size: 11px;
+      font-family: inherit;
+      font-weight: 500;
+    }
+
     .footer-link {
-      color: #968f89;
+      color: var(--footer-link);
       text-decoration: none;
       font-weight: 500;
       transition: color 0.2s;
+      font-size: 11px;
+      font-family: inherit;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
     }
 
     .footer-link:hover {
-      color: #ffffff;
+      color: var(--footer-link-hover);
     }
 
     /* Fallback DOM-based View / No data Empty View styling */
     .empty-view {
       padding: 30px 16px;
       text-align: center;
-      color: #968f89;
+      color: var(--label-color);
       line-height: 1.6;
       font-size: 12px;
       display: flex;
@@ -321,14 +473,14 @@
     }
 
     .empty-view a {
-      color: #e58c77;
+      color: var(--empty-link);
       text-decoration: none;
       font-weight: 600;
-      border-bottom: 1px dashed #e58c77;
+      border-bottom: 1px dashed var(--empty-link);
     }
 
     .empty-view a:hover {
-      color: #f4b2a3;
+      color: var(--empty-link-hover);
       border-bottom-style: solid;
     }
   </style>

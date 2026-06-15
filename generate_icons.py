@@ -4,10 +4,10 @@ from PIL import Image, ImageDraw
 BASE = "icons"
 os.makedirs(BASE, exist_ok=True)
 
-PURPLE = (0x53, 0x4A, 0xB7, 255)
+DARK_CHARCOAL = (27, 26, 25, 255)
 WHITE = (255, 255, 255, 255)
-# White at 25% opacity composited over PURPLE
-TRACK = tuple(round(0.25 * 255 + 0.75 * ch) for ch in PURPLE[:3]) + (255,)
+# White at 25% opacity composited over DARK_CHARCOAL
+TRACK = tuple(round(0.25 * 255 + 0.75 * ch) for ch in DARK_CHARCOAL[:3]) + (255,)
 
 SCALE = 8  # supersample factor for smooth edges
 
@@ -26,7 +26,7 @@ def make_icon(size):
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    draw.rounded_rectangle([0, 0, big - 1, big - 1], radius=rx, fill=PURPLE)
+    draw.rounded_rectangle([0, 0, big - 1, big - 1], radius=rx, fill=DARK_CHARCOAL)
 
     bbox = [c - r, cy - r, c + r, cy + r]
 

@@ -6,26 +6,43 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
+      --bg-color: #121110;
+      --text-color: #f5f2eb;
+      --border-color: #282523;
+      --select-bg: #1c1a19;
+      --title-color: #ffffff;
+      --sub-color: #968f89;
+    }
+    body.light-theme {
+      --bg-color: #f9f8f6;
+      --text-color: #1c1a19;
+      --border-color: #e5e2de;
+      --select-bg: #fff;
+      --title-color: #121110;
+      --sub-color: #706a65;
+    }
+    body {
       width: 360px;
       margin: 0 auto;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      color: #1a1a1a;
-      background: #fff;
+      color: var(--text-color);
+      background: var(--bg-color);
       font-size: 13px;
       padding: 20px;
+      transition: background-color 0.3s, color 0.3s;
     }
-    h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .sub { font-size: 11px; color: #888; margin-bottom: 18px; }
+    h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: var(--title-color); }
+    .sub { font-size: 11px; color: var(--sub-color); margin-bottom: 18px; }
     .field { margin-bottom: 14px; }
-    label { display: block; font-size: 12px; color: #444; margin-bottom: 6px; }
+    label { display: block; font-size: 12px; color: var(--sub-color); margin-bottom: 6px; }
     select {
       width: 100%;
       padding: 7px 8px;
       font-size: 13px;
-      border: 1px solid #ddd;
+      border: 1px solid var(--border-color);
       border-radius: 6px;
-      background: #fff;
-      color: #1a1a1a;
+      background: var(--select-bg);
+      color: var(--text-color);
     }
     .saved {
       font-size: 11px;
@@ -52,6 +69,24 @@
       <option value="25">Every 25 minutes</option>
       <option value="30">Every 30 minutes</option>
     </select>
+  </div>
+
+  <div class="field" style="margin-top: 20px;">
+    <label style="font-weight: 600; font-size: 13px; color: var(--title-color); margin-bottom: 8px;">Push Notifications</label>
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+      <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
+        <input type="checkbox" id="notify-50">
+        <span>Notify on 50% session limit crossed</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
+        <input type="checkbox" id="notify-80">
+        <span>Notify on 80% overall limit crossed</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
+        <input type="checkbox" id="notify-100">
+        <span>Notify when limit is reached (100%)</span>
+      </label>
+    </div>
   </div>
 
   <div class="saved" id="saved">Saved</div>
