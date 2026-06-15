@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Claude Limit Tracker — Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 360px;
+      margin: 0 auto;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #1a1a1a;
+      background: #fff;
+      font-size: 13px;
+      padding: 20px;
+    }
+    h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .sub { font-size: 11px; color: #888; margin-bottom: 18px; }
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 12px; color: #444; margin-bottom: 6px; }
+    select {
+      width: 100%;
+      padding: 7px 8px;
+      font-size: 13px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      background: #fff;
+      color: #1a1a1a;
+    }
+    .saved {
+      font-size: 11px;
+      color: #1D9E75;
+      margin-top: 8px;
+      height: 14px;
+      opacity: 0;
+      transition: opacity .15s ease;
+    }
+    .saved.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <h1>Claude Limit Tracker — Settings</h1>
+  <div class="sub">Configure how often usage is automatically refreshed.</div>
+
+  <div class="field">
+    <label for="interval">Auto-refresh interval</label>
+    <select id="interval">
+      <option value="5">Every 5 minutes</option>
+      <option value="10">Every 10 minutes</option>
+      <option value="15">Every 15 minutes</option>
+      <option value="20">Every 20 minutes</option>
+      <option value="25">Every 25 minutes</option>
+      <option value="30">Every 30 minutes</option>
+    </select>
+  </div>
+
+  <div class="saved" id="saved">Saved</div>
+
+  <script src="options.js"></script>
+</body>
+</html>

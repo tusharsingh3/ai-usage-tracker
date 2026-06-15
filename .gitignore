@@ -1,0 +1,10 @@
+# IDE/Agent metadata
+.omc/
+
+# Python virtual environment and cache
+.venv/
+__pycache__/
+*.pyc
+
+# macOS system files
+.DS_Store
