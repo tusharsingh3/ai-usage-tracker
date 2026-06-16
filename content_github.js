@@ -39,16 +39,6 @@ async function fetchCopilotFromAPI() {
     if (r.status === 401 || r.status === 403) lastApiFetchTime = 0;
   } catch (_) {}
 
-  // Fallback: internal endpoint GitHub's own web app uses
-  try {
-    const r = await fetch('https://api.github.com/copilot_internal/user', {
-      credentials: 'include',
-      headers: { 'Accept': 'application/json' }
-    });
-    if (r.ok) return { source: 'copilot_internal', data: await r.json() };
-    if (r.status === 401 || r.status === 403) lastApiFetchTime = 0;
-  } catch (_) {}
-
   return null;
 }
 
@@ -71,14 +61,6 @@ function parsePlanFromAPI(result) {
     else if (raw)                            type = 'Individual'; // unknown paid → assume Individual
     startDate = data.created_at || null;
     endDate   = data.next_billing_date || data.billing_cycle_end || null;
-  }
-
-  if (source === 'copilot_internal') {
-    const raw = (data.plan_type || '').toLowerCase();
-    if (raw.includes('enterprise'))    type = 'Enterprise';
-    else if (raw.includes('business')) type = 'Business';
-    else if (raw.includes('free'))     type = 'Free';
-    else if (raw)                      type = 'Individual';
   }
 
   return type ? { type, startDate, endDate } : null;

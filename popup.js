@@ -93,6 +93,29 @@ function setupThemeToggle() {
   const toggleBtn = document.getElementById('theme-toggle');
   if (!toggleBtn) return;
 
+  // Wrap privacy badge + theme toggle in a group so they sit flush together
+  if (!toggleBtn.parentElement.querySelector('.header-right')) {
+    const group = document.createElement('div');
+    group.className = 'header-right';
+
+    const badge = document.createElement('div');
+    badge.className = 'privacy-badge';
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', 'Privacy information');
+    badge.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      <div class="privacy-tooltip">
+        <strong>Privacy</strong>
+        All data stored locally in Chrome. Nothing sent to any server. No analytics or tracking.
+      </div>`;
+
+    toggleBtn.parentElement.insertBefore(group, toggleBtn);
+    group.appendChild(badge);
+    group.appendChild(toggleBtn);
+  }
+
   // Clone immediately to remove old listeners
   const newToggleBtn = toggleBtn.cloneNode(true);
   toggleBtn.replaceWith(newToggleBtn);
