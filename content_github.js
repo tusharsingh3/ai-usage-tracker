@@ -171,6 +171,25 @@ function detectSeats() {
   return null;
 }
 
+function detectAiCredits() {
+  const bodyText = document.body.innerText || '';
+
+  // "1,480 / 1,500 AI credits" or "1480 of 1500 AI credits"
+  let m = bodyText.match(/(\d[\d,]*)\s*\/\s*(\d[\d,]*)\s+AI\s+credits/i)
+         || bodyText.match(/(\d[\d,]*)\s+of\s+(\d[\d,]*)\s+AI\s+credits/i);
+  if (!m) return null;
+
+  const used  = stripCommas(m[1]);
+  const total = stripCommas(m[2]);
+  if (total <= 0) return null;
+
+  // "Resets in 15 days on Jul 1, 2026"
+  const resetMatch = bodyText.match(/resets?\s+in\s+\d+\s+days?\s+on\s+([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4})/i);
+  const resetText = resetMatch ? `Resets on ${resetMatch[1]}` : null;
+
+  return { used, total, resetText };
+}
+
 // Extract billing spend from github.com/settings/billing/* pages.
 // Looks for "Current metered usage" card first, then any non-zero $ amount.
 function detectSpend() {
@@ -237,12 +256,13 @@ async function extractUsage(force = false) {
 
   // Compute dollar-based pct: spend / subscription cost.
   // Default spend to 0 for paid plans so we always show something meaningful.
-  const spendAmount = spend?.amount ?? (subscriptionCost > 0 ? 0 : null);
+  const spendAmount = spend?.amount ?? null;
   const dollarPct = (subscriptionCost > 0 && spendAmount !== null)
     ? Math.min(100, Math.round((spendAmount / subscriptionCost) * 100))
     : pct;  // fall back to DOM-detected pct (e.g. aria progress bar) if no cost known
 
-  const hasMeaningfulData = planFromAPI || planFromDOM || pct !== null || seats || spend;
+  const aiCredits = detectAiCredits();
+  const hasMeaningfulData = planFromAPI || planFromDOM || pct !== null || seats || spend || aiCredits;
   if (!hasMeaningfulData && lastSent !== null) return null;
 
   const payload = {
@@ -251,7 +271,8 @@ async function extractUsage(force = false) {
     subscriptionCost,
     plan,
     seats,
-    spend: spend ?? (subscriptionCost > 0 ? { amount: 0, currency: 'USD' } : null),
+    spend,
+    aiCredits,
     ts: Date.now(),
   };
 

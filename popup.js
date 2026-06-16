@@ -113,8 +113,8 @@ function setupThemeToggle() {
         } else {
           document.body.classList.remove('light-theme');
         }
-        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
-          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
+        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
+          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
         });
       });
     });
@@ -467,29 +467,29 @@ function triggerRefresh() {
         .then((response) => {
           btn.classList.remove('loading');
           if (!response || !response.success) {
-            chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
-              renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
+            chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
+              renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
             });
             return;
           }
           if (response.payload) {
-            chrome.storage.local.get(['copilotUsage', 'activeService'], (d) => {
-              renderUI(d.activeService || 'claude', response.payload, d.copilotUsage);
+            chrome.storage.local.get(['copilotUsage', 'activeService', 'showCopilot'], (d) => {
+              renderUI(d.activeService || 'claude', response.payload, d.copilotUsage, d.showCopilot);
             });
           }
         })
         .catch((err) => {
           btn.classList.remove('loading');
-          chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
-            renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
+          chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
+            renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
           });
         });
     } else {
       btn.innerHTML = `${refreshIcon} <span>No Claude tab open</span>`;
       setTimeout(() => {
         btn.classList.remove('loading');
-        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
-          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
+        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
+          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
         });
       }, 1500);
     }
@@ -509,24 +509,22 @@ function triggerCopilotRefresh() {
       chrome.tabs.sendMessage(targetTab.id, { type: 'REQUEST_COPILOT_REFRESH', force: true })
         .then((response) => {
           btn.classList.remove('loading');
-          chrome.storage.local.get(['copilotUsage'], ({ copilotUsage }) => {
-            chrome.storage.local.get(['activeService'], ({ activeService }) => {
-              renderUI(activeService || 'copilot', null, copilotUsage);
-            });
+          chrome.storage.local.get(['copilotUsage', 'activeService', 'showCopilot'], (d) => {
+            renderUI(d.activeService || 'copilot', null, d.copilotUsage, d.showCopilot);
           });
         })
         .catch(() => {
           btn.classList.remove('loading');
-          chrome.storage.local.get(['copilotUsage', 'activeService'], (data) => {
-            renderUI(data.activeService || 'copilot', null, data.copilotUsage);
+          chrome.storage.local.get(['copilotUsage', 'activeService', 'showCopilot'], (data) => {
+            renderUI(data.activeService || 'copilot', null, data.copilotUsage, data.showCopilot);
           });
         });
     } else {
       btn.innerHTML = `${refreshIcon} <span>Open GitHub Copilot settings tab first</span>`;
       setTimeout(() => {
         btn.classList.remove('loading');
-        chrome.storage.local.get(['copilotUsage', 'activeService'], (data) => {
-          renderUI(data.activeService || 'copilot', null, data.copilotUsage);
+        chrome.storage.local.get(['copilotUsage', 'activeService', 'showCopilot'], (data) => {
+          renderUI(data.activeService || 'copilot', null, data.copilotUsage, data.showCopilot);
         });
       }, 1500);
     }
@@ -556,7 +554,7 @@ function renderCopilotDashboard(cu) {
         <div class="bento-card">
           <div class="empty-view">
             <span>No Copilot data found yet.</span>
-            <a href="https://github.com/settings/copilot" target="_blank">Open GitHub Copilot settings →</a>
+            <a href="https://github.com/settings/billing" target="_blank">Open GitHub Copilot settings →</a>
           </div>
         </div>
         <button class="btn-refresh" id="refresh-btn" type="button">
@@ -564,7 +562,7 @@ function renderCopilotDashboard(cu) {
         </button>
         <div class="footer-row">
           <button class="footer-link" id="settings-btn" type="button">Settings</button>
-          <a class="footer-link" href="https://github.com/settings/copilot" target="_blank">Open Copilot →</a>
+          <a class="footer-link" href="https://github.com/settings/billing" target="_blank">Open Billing →</a>
         </div>
       </div>`;
     setupThemeToggle();
@@ -586,17 +584,27 @@ function renderCopilotDashboard(cu) {
   const displayPct = cu.pct ?? 0;
 
   let topCardHtml = '';
-  if (subscriptionCost > 0) {
-    // Paid plan — show dollar spend vs subscription cost with progress bar
-    const topColor = getColorForPct(displayPct);
+  if (cu.aiCredits) {
+    // AI credits card — primary display when available
+    const { used, total, resetText } = cu.aiCredits;
+    const creditPct = Math.min(100, Math.round((used / total) * 100));
+    const topColor = getColorForPct(creditPct);
+    const resetLine = resetText || (endDateStr !== '—' ? `Resets on ${endDateStr}` : '');
     topCardHtml = `
       <div class="bento-card">
-        <span class="card-label">COPILOT USAGE</span>
-        <span class="weekly-value" style="color: ${topColor.circle}">$${spendAmount.toFixed(2)}</span>
+        <span class="card-label">AI USAGE</span>
+        <span class="weekly-value" style="color: ${topColor.circle}">${used.toLocaleString()} / ${total.toLocaleString()}</span>
         <div class="progress-bar-container">
-          <div class="progress-bar-fill" style="width: ${displayPct}%; background: ${topColor.bar};"></div>
+          <div class="progress-bar-fill" style="width: ${creditPct}%; background: ${topColor.bar};"></div>
         </div>
-        <span class="reset-text">of $${subscriptionCost}/mo · ${displayPct}% used</span>
+        <span class="reset-text">AI credits · ${creditPct}% used${resetLine ? ' · ' + resetLine : ''}</span>
+      </div>`;
+  } else if (subscriptionCost > 0) {
+    topCardHtml = `
+      <div class="bento-card">
+        <span class="card-label">AI USAGE</span>
+        <span class="weekly-value" style="font-size: 14px; color: var(--label-color);">No credit data yet</span>
+        <span class="reset-text">Visit <a href="https://github.com/settings/billing" target="_blank" style="color:inherit;text-decoration:underline">GitHub billing</a> to load AI credits</span>
       </div>`;
   } else {
     // Free plan — no subscription cost to show usage against
@@ -688,7 +696,7 @@ function renderCopilotDashboard(cu) {
 
       <div class="footer-row">
         <button class="footer-link" id="settings-btn" type="button">Settings</button>
-        <a class="footer-link" href="https://github.com/settings/copilot" target="_blank">Open Copilot →</a>
+        <a class="footer-link" href="https://github.com/settings/billing" target="_blank">Open Billing →</a>
       </div>
     </div>`;
 
@@ -697,8 +705,9 @@ function renderCopilotDashboard(cu) {
   document.getElementById('refresh-btn').addEventListener('click', triggerCopilotRefresh);
 }
 
-function renderUI(activeService, usage, copilotUsage) {
-  const svc = activeService || 'claude';
+function renderUI(activeService, usage, copilotUsage, showCopilot) {
+  const copilotEnabled = showCopilot !== false;
+  const svc = (activeService === 'copilot' && copilotEnabled) ? 'copilot' : 'claude';
 
   if (svc === 'copilot') {
     renderCopilotDashboard(copilotUsage);
@@ -711,37 +720,39 @@ function renderUI(activeService, usage, copilotUsage) {
   if (placeholder) {
     const toggle = document.createElement('div');
     toggle.className = 'service-toggle';
-    toggle.innerHTML = `
-      <button class="service-btn ${svc === 'claude' ? 'active' : ''}" id="btn-claude">Claude</button>
-      <button class="service-btn ${svc === 'copilot' ? 'active' : ''}" id="btn-copilot">Copilot</button>
-    `;
+    toggle.innerHTML = copilotEnabled
+      ? `<button class="service-btn ${svc === 'claude' ? 'active' : ''}" id="btn-claude">Claude</button>
+         <button class="service-btn ${svc === 'copilot' ? 'active' : ''}" id="btn-copilot">Copilot <span class="beta-badge">beta</span></button>`
+      : `<button class="service-btn active" id="btn-claude">Claude</button>`;
     placeholder.replaceWith(toggle);
 
     document.getElementById('btn-claude').addEventListener('click', () => {
       chrome.storage.local.set({ activeService: 'claude' });
     });
-    document.getElementById('btn-copilot').addEventListener('click', () => {
-      chrome.storage.local.set({ activeService: 'copilot' });
-    });
+    if (copilotEnabled) {
+      document.getElementById('btn-copilot').addEventListener('click', () => {
+        chrome.storage.local.set({ activeService: 'copilot' });
+      });
+    }
   }
 }
 
 // Listen to storage changes reactively to sync updates
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.usage || changes.copilotUsage || changes.activeService) {
-    chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (data) => {
-      renderUI(data.activeService || 'claude', data.usage, data.copilotUsage);
+  if (changes.usage || changes.copilotUsage || changes.activeService || changes.showCopilot) {
+    chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (data) => {
+      renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot);
     });
   }
 });
 
 // Initial draw
-chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'theme'], (data) => {
+chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'theme', 'showCopilot'], (data) => {
   if (data.theme === 'light') {
     document.body.classList.add('light-theme');
   } else {
     document.body.classList.remove('light-theme');
   }
-  renderUI(data.activeService || 'claude', data.usage, data.copilotUsage);
+  renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot);
 });
