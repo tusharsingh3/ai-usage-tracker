@@ -26,15 +26,15 @@ function formatResetText(resetsAt) {
   if (!resetsAt) return null;
   const rawDiff = new Date(resetsAt).getTime() - Date.now();
   if (rawDiff <= 0) return '0m';
-  
+
   // Round to nearest minute to prevent off-by-one errors from millisecond diffs
   const diff = Math.round(rawDiff / 60000) * 60000;
   if (diff <= 0) return '0m';
-  
+
   const d = Math.floor(diff / (24 * 3600 * 1000));
   const h = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000));
   const m = Math.floor((diff % (3600 * 1000)) / (60 * 1000));
-  
+
   const parts = [];
   if (d > 0) parts.push(`${d}d`);
   if (h > 0) parts.push(`${h}h`);
@@ -113,25 +113,22 @@ function setupThemeToggle() {
         } else {
           document.body.classList.remove('light-theme');
         }
-        chrome.storage.local.get(['usage'], ({ usage }) => {
-          renderUI(usage);
+        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
+          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
         });
       });
     });
   });
 }
 
-function renderUI(usage) {
+function renderClaudeDashboard(usage) {
   const root = document.getElementById('root');
 
   if (!usage) {
     root.innerHTML = `
       <div class="app-container">
         <div class="header">
-          <div class="logo-section">
-            <div class="logo-badge">C</div>
-            <div class="app-title">Claude Limits</div>
-          </div>
+          <div id="service-toggle-placeholder"></div>
           <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">
             <!-- sun/moon icon -->
           </button>
@@ -146,12 +143,11 @@ function renderUI(usage) {
           ${refreshIcon} <span>Refresh Usage Data</span>
         </button>
         <div class="footer-row">
-          <span>Not updated</span>
           <button class="footer-link" id="settings-btn" type="button">Settings</button>
           <a class="footer-link" href="https://claude.ai" target="_blank">Open Claude →</a>
         </div>
       </div>`;
-    
+
     setupThemeToggle();
     document.getElementById('settings-btn').addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
@@ -194,36 +190,36 @@ function renderUI(usage) {
     const orgResetText = formatResetText(orgResetAt);
     const orgResetStr = orgResetText ? `${orgResetText} left` : '—';
 
-    // Defaults (Weekly is top, Session is left, Org is right)
-    topLabel = 'WEEKLY USAGE';
-    topPct = weeklyPct;
-    topResetStr = weeklyResetText ? `Resets in ${weeklyResetText}` : 'Resets in —';
+    // Defaults (Session is top, Weekly is left, Org is right)
+    topLabel = 'SESSION LIMIT';
+    topPct = sessionPct;
+    topResetStr = sessionResetText ? `Resets in ${sessionResetText}` : 'Resets in —';
 
-    let leftLabel = 'Session';
-    let leftPct = sessionPct;
-    let leftResetStr = sessionResetStr;
+    let leftLabel = 'Weekly';
+    let leftPct = weeklyPct;
+    let leftResetStr = weeklyResetStr;
 
     let rightLabel = orgName;
     let rightPct = orgPct;
     let rightResetStr = orgResetStr;
 
     // Dynamically elevate the highest percentage limit to the top card to match the badge
-    if (sessionPct > weeklyPct && sessionPct > orgPct) {
-      topLabel = 'SESSION LIMIT';
-      topPct = sessionPct;
-      topResetStr = sessionResetText ? `Resets in ${sessionResetText}` : 'Resets in —';
+    if (weeklyPct > sessionPct && weeklyPct > orgPct) {
+      topLabel = 'WEEKLY USAGE';
+      topPct = weeklyPct;
+      topResetStr = weeklyResetText ? `Resets in ${weeklyResetText}` : 'Resets in —';
 
-      leftLabel = 'Weekly';
-      leftPct = weeklyPct;
-      leftResetStr = weeklyResetStr;
-    } else if (orgPct > weeklyPct && orgPct > sessionPct) {
+      leftLabel = 'Session';
+      leftPct = sessionPct;
+      leftResetStr = sessionResetStr;
+    } else if (orgPct > sessionPct && orgPct > weeklyPct) {
       topLabel = `${orgName.toUpperCase()} LIMIT`;
       topPct = orgPct;
       topResetStr = orgResetText ? `Resets in ${orgResetText}` : 'Resets in —';
 
-      rightLabel = 'Weekly';
-      rightPct = weeklyPct;
-      rightResetStr = weeklyResetStr;
+      rightLabel = 'Session';
+      rightPct = sessionPct;
+      rightResetStr = sessionResetStr;
     }
 
     // Resolve dynamic colors based on percentages
@@ -392,10 +388,7 @@ function renderUI(usage) {
     <div class="app-container">
       <!-- Header -->
       <div class="header">
-        <div class="logo-section">
-          <div class="logo-badge">C</div>
-          <div class="app-title">Claude Limits</div>
-        </div>
+        <div id="service-toggle-placeholder"></div>
         <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">
           <!-- sun/moon icon -->
         </button>
@@ -444,7 +437,6 @@ function renderUI(usage) {
 
       <!-- Footer Info -->
       <div class="footer-row">
-        <span>Updated ${ts ? timeAgo(ts) : '—'}</span>
         <button class="footer-link" id="settings-btn" type="button">Settings</button>
         <a class="footer-link" href="https://claude.ai" target="_blank">Open Claude →</a>
       </div>
@@ -470,51 +462,286 @@ function triggerRefresh() {
     if (tabs && tabs.length > 0) {
       // Prefer the active tab, then any non-discarded tab, fallback to tabs[0]
       const targetTab = tabs.find(t => t.active) || tabs.find(t => !t.discarded) || tabs[0];
-      
+
       chrome.tabs.sendMessage(targetTab.id, { type: 'REQUEST_REFRESH', force: true })
         .then((response) => {
           btn.classList.remove('loading');
           if (!response || !response.success) {
-            chrome.storage.local.get(['usage'], ({ usage: savedUsage }) => {
-              renderUI(savedUsage);
+            chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
+              renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
             });
             return;
           }
           if (response.payload) {
-            renderUI(response.payload);
+            chrome.storage.local.get(['copilotUsage', 'activeService'], (d) => {
+              renderUI(d.activeService || 'claude', response.payload, d.copilotUsage);
+            });
           }
         })
         .catch((err) => {
           btn.classList.remove('loading');
-          chrome.storage.local.get(['usage'], ({ usage: savedUsage }) => {
-            renderUI(savedUsage);
+          chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
+            renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
           });
         });
     } else {
       btn.innerHTML = `${refreshIcon} <span>No Claude tab open</span>`;
       setTimeout(() => {
         btn.classList.remove('loading');
-        chrome.storage.local.get(['usage'], ({ usage: savedUsage }) => {
-          renderUI(savedUsage);
+        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (d) => {
+          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage);
         });
       }, 1500);
     }
   });
 }
 
+function triggerCopilotRefresh() {
+  const btn = document.getElementById('refresh-btn');
+  if (!btn || btn.classList.contains('loading')) return;
+
+  btn.classList.add('loading');
+  btn.innerHTML = `${refreshIcon} <span>Refreshing...</span>`;
+
+  chrome.tabs.query({ url: 'https://github.com/settings/*' }, (tabs) => {
+    if (tabs && tabs.length > 0) {
+      const targetTab = tabs.find(t => t.active) || tabs.find(t => !t.discarded) || tabs[0];
+      chrome.tabs.sendMessage(targetTab.id, { type: 'REQUEST_COPILOT_REFRESH', force: true })
+        .then((response) => {
+          btn.classList.remove('loading');
+          chrome.storage.local.get(['copilotUsage'], ({ copilotUsage }) => {
+            chrome.storage.local.get(['activeService'], ({ activeService }) => {
+              renderUI(activeService || 'copilot', null, copilotUsage);
+            });
+          });
+        })
+        .catch(() => {
+          btn.classList.remove('loading');
+          chrome.storage.local.get(['copilotUsage', 'activeService'], (data) => {
+            renderUI(data.activeService || 'copilot', null, data.copilotUsage);
+          });
+        });
+    } else {
+      btn.innerHTML = `${refreshIcon} <span>Open GitHub Copilot settings tab first</span>`;
+      setTimeout(() => {
+        btn.classList.remove('loading');
+        chrome.storage.local.get(['copilotUsage', 'activeService'], (data) => {
+          renderUI(data.activeService || 'copilot', null, data.copilotUsage);
+        });
+      }, 1500);
+    }
+  });
+}
+
+function renderCopilotDashboard(cu) {
+  const root = document.getElementById('root');
+
+  // Copilot plan billing text mapping
+  function copilotBillingText(type) {
+    if (type === 'Free') return '$0/mo';
+    if (type === 'Pro') return '$10/mo';
+    if (type === 'Individual') return '$10/mo';
+    if (type === 'Business') return '$19/seat/mo';
+    if (type === 'Enterprise') return '$39/seat/mo';
+    return 'Active';
+  }
+
+  if (!cu) {
+    root.innerHTML = `
+      <div class="app-container">
+        <div class="header">
+          <div id="service-toggle-placeholder"></div>
+          <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme"></button>
+        </div>
+        <div class="bento-card">
+          <div class="empty-view">
+            <span>No Copilot data found yet.</span>
+            <a href="https://github.com/settings/copilot" target="_blank">Open GitHub Copilot settings →</a>
+          </div>
+        </div>
+        <button class="btn-refresh" id="refresh-btn" type="button">
+          ${refreshIcon} <span>Refresh Copilot Data</span>
+        </button>
+        <div class="footer-row">
+          <button class="footer-link" id="settings-btn" type="button">Settings</button>
+          <a class="footer-link" href="https://github.com/settings/copilot" target="_blank">Open Copilot →</a>
+        </div>
+      </div>`;
+    setupThemeToggle();
+    document.getElementById('settings-btn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+    document.getElementById('refresh-btn').addEventListener('click', triggerCopilotRefresh);
+    return;
+  }
+
+  const plan = cu.plan || { type: 'Free', startDate: null, endDate: null };
+  const planType = plan.type || 'Free';
+  const planBadgeClass = `plan-${planType.toLowerCase()}`;
+  const billingText = copilotBillingText(planType);
+  const startDateStr = formatDate(plan.startDate);
+  const endDateStr = formatDate(plan.endDate);
+
+  const spend = cu.spend || null;
+  const subscriptionCost = cu.subscriptionCost || 0;
+  const spendAmount = spend?.amount ?? 0;
+  const displayPct = cu.pct ?? 0;
+
+  let topCardHtml = '';
+  if (subscriptionCost > 0) {
+    // Paid plan — show dollar spend vs subscription cost with progress bar
+    const topColor = getColorForPct(displayPct);
+    topCardHtml = `
+      <div class="bento-card">
+        <span class="card-label">COPILOT USAGE</span>
+        <span class="weekly-value" style="color: ${topColor.circle}">$${spendAmount.toFixed(2)}</span>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" style="width: ${displayPct}%; background: ${topColor.bar};"></div>
+        </div>
+        <span class="reset-text">of $${subscriptionCost}/mo · ${displayPct}% used</span>
+      </div>`;
+  } else {
+    // Free plan — no subscription cost to show usage against
+    topCardHtml = `
+      <div class="bento-card">
+        <span class="card-label">COPILOT PLAN</span>
+        <span class="weekly-value" style="font-size: 18px; color: var(--text-white);">${planType}</span>
+        <span class="reset-text">Free plan · no usage limits</span>
+      </div>`;
+  }
+
+  // Seats card (if present)
+  let seatsHtml = '';
+  if (cu.seats) {
+    const seatTotal = cu.seats.total != null ? cu.seats.total : '?';
+    const seatPct = cu.seats.total ? Math.round((cu.seats.used / cu.seats.total) * 100) : null;
+    const seatColor = seatPct != null ? getColorForPct(seatPct).circle : 'var(--label-color)';
+    const seatOffset = seatPct != null ? (113.1 - (113.1 * seatPct) / 100).toFixed(1) : '113.1';
+    seatsHtml = `
+      <div class="bento-card">
+        <span class="card-label">Seats</span>
+        <div class="circle-card-content">
+          <div class="circle-svg-wrap">
+            <svg width="44" height="44" viewBox="0 0 44 44">
+              <circle cx="22" cy="22" r="18" fill="none" stroke="var(--circle-empty)" stroke-width="4"/>
+              <circle cx="22" cy="22" r="18" fill="none"
+                stroke="${seatColor}" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="113.1" stroke-dashoffset="${seatOffset}"/>
+            </svg>
+            <div class="circle-text-center" style="font-size: 9px;">${cu.seats.used}/${seatTotal}</div>
+          </div>
+          <div class="circle-details">
+            <span class="circle-val-text">${cu.seats.used} / ${seatTotal}</span>
+            <span class="circle-sub-text">seats used</span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Plan details dates section
+  let dateSectionHtml = '';
+  if (startDateStr !== '—' || endDateStr !== '—') {
+    dateSectionHtml = `
+      <div class="plan-dates">
+        <div class="plan-date-col">
+          <span class="date-label">Started</span>
+          <span class="date-value">${startDateStr}</span>
+        </div>
+        <div class="plan-date-col">
+          <span class="date-label">Renews</span>
+          <span class="date-value">${endDateStr}</span>
+        </div>
+      </div>`;
+  }
+
+  root.innerHTML = `
+    <div class="app-container">
+      <div class="header">
+        <div id="service-toggle-placeholder"></div>
+        <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme"></button>
+      </div>
+
+      ${topCardHtml}
+
+      ${cu.seats ? `<div class="grid-row">${seatsHtml}<div class="bento-card plan-details-card">
+        <span class="card-label">Plan Details</span>
+        <div class="plan-details-content">
+          <div class="plan-info-row">
+            <span class="plan-type-badge ${planBadgeClass}">${planType}</span>
+            <span class="plan-billing-cycle">${billingText}</span>
+          </div>
+          ${dateSectionHtml}
+        </div>
+      </div></div>` : `
+      <div class="bento-card plan-details-card">
+        <span class="card-label">Plan Details</span>
+        <div class="plan-details-content">
+          <div class="plan-info-row">
+            <span class="plan-type-badge ${planBadgeClass}">${planType}</span>
+            <span class="plan-billing-cycle">${billingText}</span>
+          </div>
+          ${dateSectionHtml}
+        </div>
+      </div>`}
+
+      <button class="btn-refresh" id="refresh-btn" type="button">
+        ${refreshIcon} <span>Refresh Copilot Data</span>
+      </button>
+
+      <div class="footer-row">
+        <button class="footer-link" id="settings-btn" type="button">Settings</button>
+        <a class="footer-link" href="https://github.com/settings/copilot" target="_blank">Open Copilot →</a>
+      </div>
+    </div>`;
+
+  setupThemeToggle();
+  document.getElementById('settings-btn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  document.getElementById('refresh-btn').addEventListener('click', triggerCopilotRefresh);
+}
+
+function renderUI(activeService, usage, copilotUsage) {
+  const svc = activeService || 'claude';
+
+  if (svc === 'copilot') {
+    renderCopilotDashboard(copilotUsage);
+  } else {
+    renderClaudeDashboard(usage);
+  }
+
+  // Insert toggle switch into placeholder (both dashboards render one)
+  const placeholder = document.getElementById('service-toggle-placeholder');
+  if (placeholder) {
+    const toggle = document.createElement('div');
+    toggle.className = 'service-toggle';
+    toggle.innerHTML = `
+      <button class="service-btn ${svc === 'claude' ? 'active' : ''}" id="btn-claude">Claude</button>
+      <button class="service-btn ${svc === 'copilot' ? 'active' : ''}" id="btn-copilot">Copilot</button>
+    `;
+    placeholder.replaceWith(toggle);
+
+    document.getElementById('btn-claude').addEventListener('click', () => {
+      chrome.storage.local.set({ activeService: 'claude' });
+    });
+    document.getElementById('btn-copilot').addEventListener('click', () => {
+      chrome.storage.local.set({ activeService: 'copilot' });
+    });
+  }
+}
+
 // Listen to storage changes reactively to sync updates
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.usage) {
-    renderUI(changes.usage.newValue);
+  if (area !== 'local') return;
+  if (changes.usage || changes.copilotUsage || changes.activeService) {
+    chrome.storage.local.get(['usage', 'copilotUsage', 'activeService'], (data) => {
+      renderUI(data.activeService || 'claude', data.usage, data.copilotUsage);
+    });
   }
 });
 
 // Initial draw
-chrome.storage.local.get(['usage', 'theme'], ({ usage, theme }) => {
-  if (theme === 'light') {
+chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'theme'], (data) => {
+  if (data.theme === 'light') {
     document.body.classList.add('light-theme');
   } else {
     document.body.classList.remove('light-theme');
   }
-  renderUI(usage);
+  renderUI(data.activeService || 'claude', data.usage, data.copilotUsage);
 });

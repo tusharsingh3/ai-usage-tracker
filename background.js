@@ -4,6 +4,7 @@
 const DEFAULT_REFRESH_MINUTES = 5;
 
 let usage = null;
+let copilotUsage = null;
 
 function getBadgeColor(pct) {
   if (pct < 50) return '#1D9E75';  // green
@@ -37,32 +38,42 @@ function formatToolbarTime(resetsAt) {
   return parts.join(' ');
 }
 
-function updateBadge(u) {
-  const color = getBadgeColor(u.pct);
-  chrome.action.setBadgeText({ text: u.pct + '%' });
+function updateBadge(u, cu) {
+  // Badge shows session usage for Claude (five_hour), not the overall max
+  const claudePct = u
+    ? (u.source === 'api' ? Math.round(u.five_hour?.utilization || 0) : u.pct || 0)
+    : 0;
+  const copilotPct = (cu?.pct != null) ? cu.pct : 0;
+  const displayPct = Math.max(claudePct, copilotPct);
+  const hasAnyData = u || cu;
+
+  if (!hasAnyData) return;
+
+  const color = getBadgeColor(displayPct);
+  chrome.action.setBadgeText({ text: displayPct + '%' });
   chrome.action.setBadgeBackgroundColor({ color });
   if (typeof chrome.action.setBadgeTextColor === 'function') {
     chrome.action.setBadgeTextColor({ color: '#ffffff' });
   }
-  
-  let titleStr = '';
-  if (u.source === 'api') {
-    const sessionPct = Math.round(u.five_hour?.utilization || 0);
-    const sessionResetStr = formatToolbarTime(u.five_hour?.resets_at);
-    
-    const weeklyPct = Math.round(u.seven_day?.utilization || 0);
-    const weeklyResetStr = formatToolbarTime(u.seven_day?.resets_at);
 
-    const parts = [];
-    parts.push(`Session: ${sessionPct}%` + (sessionResetStr ? ` / ${sessionResetStr}` : ''));
-    parts.push(`Weekly: ${weeklyPct}%` + (weeklyResetStr ? ` / ${weeklyResetStr}` : ''));
-    
-    titleStr = parts.join('\n');
+  // Build tooltip — Claude line shows session usage with reset time
+  let claudeLine = '';
+  if (u) {
+    if (u.source === 'api') {
+      const sessionPct = Math.round(u.five_hour?.utilization || 0);
+      const resetStr   = formatToolbarTime(u.five_hour?.resets_at);
+      claudeLine = `Claude - ${sessionPct}%` + (resetStr ? ` / ${resetStr}` : '');
+    } else {
+      claudeLine = `Claude - ${u.pct}%` + (u.resetText ? ` / ${u.resetText}` : '');
+    }
   } else {
-    titleStr = `Claude: ${u.used}/${u.total} messages (${u.pct}%)` +
-               (u.resetText ? `\nResets in ${u.resetText}` : '');
+    claudeLine = 'Claude - —';
   }
-  chrome.action.setTitle({ title: titleStr });
+
+  // Copilot line: just pct, no reset time
+  const copilotLine = cu ? `Copilot - ${cu.pct != null ? cu.pct + '%' : '—'}` : 'Copilot - —';
+
+  chrome.action.setTitle({ title: claudeLine + '\n' + copilotLine });
 }
 
 function maybeNotify(u) {
@@ -178,14 +189,23 @@ function ensureRefreshAlarm() {
 function handleUsageUpdate(payload) {
   usage = payload;
   chrome.storage.local.set({ usage });
-  updateBadge(usage);
+  updateBadge(usage, copilotUsage);
   maybeNotify(usage);
   scheduleResetAlarm(usage.resetText);
+}
+
+function handleCopilotUsageUpdate(payload) {
+  copilotUsage = payload;
+  chrome.storage.local.set({ copilotUsage });
+  updateBadge(usage, copilotUsage);
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'USAGE_UPDATE') {
     handleUsageUpdate(msg.payload);
+  }
+  if (msg.type === 'COPILOT_USAGE_UPDATE') {
+    handleCopilotUsageUpdate(msg.payload);
   }
 });
 
@@ -199,6 +219,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
           });
       });
     });
+    chrome.tabs.query({ url: 'https://github.com/settings/*' }, (tabs) => {
+      tabs.forEach((tab) => {
+        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COPILOT_REFRESH' })
+          .catch(() => {});
+      });
+    });
   }
 
   if (alarm.name === 'reset') {
@@ -206,23 +232,24 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     chrome.storage.local.remove(['usage', 'notifiedThresholds']);
     chrome.action.setBadgeText({ text: '' });
     chrome.action.setBadgeBackgroundColor({ color: '#888780' });
+    // If copilot still has data, restore its badge
+    if (copilotUsage) updateBadge(null, copilotUsage);
   }
 });
 
 chrome.tabs.onActivated.addListener(() => {
-  if (usage) updateBadge(usage);
+  if (usage || copilotUsage) updateBadge(usage, copilotUsage);
 });
 
 chrome.tabs.onUpdated.addListener((_, info) => {
-  if (info.status === 'complete' && usage) updateBadge(usage);
+  if (info.status === 'complete' && (usage || copilotUsage)) updateBadge(usage, copilotUsage);
 });
 
 function restoreFromStorage() {
-  chrome.storage.local.get(['usage'], ({ usage: saved }) => {
-    if (saved) {
-      usage = saved;
-      updateBadge(saved);
-    }
+  chrome.storage.local.get(['usage', 'copilotUsage'], ({ usage: u, copilotUsage: cu }) => {
+    if (u) usage = u;
+    if (cu) copilotUsage = cu;
+    if (u || cu) updateBadge(usage, copilotUsage);
   });
 }
 

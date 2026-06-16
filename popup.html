@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Claude Usage Tracker</title>
+  <title>AI Usage Tracker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -157,6 +157,40 @@
     }
 
     .theme-toggle-btn:hover {
+      background: var(--btn-hover);
+      color: var(--btn-text-hover);
+    }
+
+    /* Service Toggle (Claude | Copilot) */
+    .service-toggle {
+      display: flex;
+      background: var(--bar-bg);
+      border: 1px solid var(--bar-border);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .service-btn {
+      flex: 1;
+      padding: 4px 10px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--label-color);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .service-btn.active {
+      background: #5f6af8;
+      color: #fff;
+    }
+
+    .service-btn:not(.active):hover {
       background: var(--btn-hover);
       color: var(--btn-text-hover);
     }

@@ -147,7 +147,7 @@ async function fetchUsageFromAPI() {
       ...usageData
     };
   } catch (err) {
-    console.debug('[Claude Limit Tracker] API fetch failed:', err);
+    console.debug('[AI Usage Tracker] API fetch failed:', err);
     return null;
   }
 }
@@ -246,16 +246,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-const observer = new MutationObserver(() => extractUsage());
-observer.observe(document.body, {
-  childList: true,
-  subtree: true,
-  characterData: true,
+function isAlive() {
+  try { return !!chrome.runtime?.id; } catch (_) { return false; }
+}
+
+const observer = new MutationObserver(() => {
+  if (!isAlive()) { observer.disconnect(); return; }
+  extractUsage().catch(() => {});
 });
+observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-setInterval(() => extractUsage(false), 30_000);
+const intervalId = setInterval(() => {
+  if (!isAlive()) { clearInterval(intervalId); return; }
+  extractUsage(false).catch(() => {});
+}, 30_000);
 
-extractUsage();
+extractUsage().catch(() => {});
 
 
 
