@@ -80,7 +80,10 @@ function formatResetText(resetsAt) {
 async function fetchUsageFromAPI() {
   try {
     const orgsResponse = await fetch('/api/organizations');
-    if (!orgsResponse.ok) return null;
+    if (!orgsResponse.ok) {
+      if (orgsResponse.status === 401 || orgsResponse.status === 403) lastApiFetchTime = 0;
+      return null;
+    }
     const orgs = await orgsResponse.json();
     if (!orgs || orgs.length === 0) return null;
 
@@ -136,7 +139,10 @@ async function fetchUsageFromAPI() {
     };
 
     const usageResponse = await fetch(`/api/organizations/${orgId}/usage`);
-    if (!usageResponse.ok) return null;
+    if (!usageResponse.ok) {
+      if (usageResponse.status === 401 || usageResponse.status === 403) lastApiFetchTime = 0;
+      return null;
+    }
     const usageData = await usageResponse.json();
 
     return {
@@ -250,16 +256,20 @@ function isAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
 }
 
+let _observerTimer = null;
 const observer = new MutationObserver(() => {
   if (!isAlive()) { observer.disconnect(); return; }
-  extractUsage().catch(() => {});
+  clearTimeout(_observerTimer);
+  _observerTimer = setTimeout(() => extractUsage().catch(() => {}), 500);
 });
-observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+observer.observe(document.body, { childList: true, subtree: true });
+
+window.addEventListener('beforeunload', () => observer.disconnect(), { once: true });
 
 const intervalId = setInterval(() => {
   if (!isAlive()) { clearInterval(intervalId); return; }
   extractUsage(false).catch(() => {});
-}, 30_000);
+}, 60_000);
 
 extractUsage().catch(() => {});
 

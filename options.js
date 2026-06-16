@@ -37,6 +37,8 @@ chrome.storage.local.get([
 
 select.addEventListener('change', () => {
   const minutes = Number(select.value);
+  const VALID_INTERVALS = [5, 10, 15, 30];
+  if (!VALID_INTERVALS.includes(minutes)) return;
   chrome.storage.local.set({ refreshInterval: minutes }, showSaved);
 });
 

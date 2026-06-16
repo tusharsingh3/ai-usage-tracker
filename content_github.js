@@ -36,6 +36,7 @@ async function fetchCopilotFromAPI() {
       }
     });
     if (r.ok) return { source: 'user_copilot', data: await r.json() };
+    if (r.status === 401 || r.status === 403) lastApiFetchTime = 0;
   } catch (_) {}
 
   // Fallback: internal endpoint GitHub's own web app uses
@@ -45,6 +46,7 @@ async function fetchCopilotFromAPI() {
       headers: { 'Accept': 'application/json' }
     });
     if (r.ok) return { source: 'copilot_internal', data: await r.json() };
+    if (r.status === 401 || r.status === 403) lastApiFetchTime = 0;
   } catch (_) {}
 
   return null;
@@ -212,17 +214,6 @@ function detectSpend() {
     }
   }
 
-  // Strategy 2: any non-zero dollar amount on the billing page
-  const bodyText = document.body.innerText || '';
-  const amounts = [];
-  let m;
-  const re = /\$\s*([\d,]+\.?\d*)/g;
-  while ((m = re.exec(bodyText)) !== null) {
-    const val = stripCommas(m[1]);
-    if (val > 0 && val < 100000) amounts.push(val);
-  }
-  if (amounts.length) return { amount: parseFloat(Math.max(...amounts).toFixed(2)), currency: 'USD' };
-
   return null;
 }
 
@@ -263,7 +254,7 @@ async function extractUsage(force = false) {
 
   const aiCredits = detectAiCredits();
   const hasMeaningfulData = planFromAPI || planFromDOM || pct !== null || seats || spend || aiCredits;
-  if (!hasMeaningfulData && lastSent !== null) return null;
+  if (!hasMeaningfulData) return null;
 
   const payload = {
     source: 'github-dom',
@@ -296,15 +287,19 @@ function isAlive() {
   try { return !!chrome.runtime?.id; } catch (_) { return false; }
 }
 
+let _observerTimer = null;
 const observer = new MutationObserver(() => {
   if (!isAlive()) { observer.disconnect(); return; }
-  extractUsage().catch(() => {});
+  clearTimeout(_observerTimer);
+  _observerTimer = setTimeout(() => extractUsage().catch(() => {}), 500);
 });
-observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+observer.observe(document.body, { childList: true, subtree: true });
+
+window.addEventListener('beforeunload', () => observer.disconnect(), { once: true });
 
 const intervalId = setInterval(() => {
   if (!isAlive()) { clearInterval(intervalId); return; }
   extractUsage(false).catch(() => {});
-}, 30_000);
+}, 60_000);
 
 extractUsage().catch(() => {});

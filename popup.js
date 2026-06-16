@@ -22,6 +22,12 @@ const moonIcon = `
   <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
 </svg>`;
 
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = String(str ?? '');
+  return d.innerHTML;
+}
+
 function formatResetText(resetsAt) {
   if (!resetsAt) return null;
   const rawDiff = new Date(resetsAt).getTime() - Date.now();
@@ -213,7 +219,7 @@ function renderClaudeDashboard(usage) {
       leftPct = sessionPct;
       leftResetStr = sessionResetStr;
     } else if (orgPct > sessionPct && orgPct > weeklyPct) {
-      topLabel = `${orgName.toUpperCase()} LIMIT`;
+      topLabel = `${esc(orgName.toUpperCase())} LIMIT`;
       topPct = orgPct;
       topResetStr = orgResetText ? `Resets in ${orgResetText}` : 'Resets in —';
 
@@ -226,14 +232,14 @@ function renderClaudeDashboard(usage) {
     const leftColor = getColorForPct(leftPct).circle;
     const rightColor = getColorForPct(rightPct).circle;
 
-    const leftOffset = (113.1 - (113.1 * leftPct) / 100).toFixed(1);
-    const rightOffset = (113.1 - (113.1 * rightPct) / 100).toFixed(1);
+    const leftOffset = (113.1 - (113.1 * Math.min(leftPct, 100)) / 100).toFixed(1);
+    const rightOffset = (113.1 - (113.1 * Math.min(rightPct, 100)) / 100).toFixed(1);
 
     middleGridHtml = `
       <div class="grid-row">
         <!-- Left Limit Card -->
         <div class="bento-card">
-          <span class="card-label" title="${leftLabel}">${leftLabel}</span>
+          <span class="card-label" title="${esc(leftLabel)}">${esc(leftLabel)}</span>
           <div class="circle-card-content">
             <div class="circle-svg-wrap">
               <svg width="44" height="44" viewBox="0 0 44 44">
@@ -253,7 +259,7 @@ function renderClaudeDashboard(usage) {
 
         <!-- Right Limit Card -->
         <div class="bento-card">
-          <span class="card-label" title="${rightLabel}">${rightLabel}</span>
+          <span class="card-label" title="${esc(rightLabel)}">${esc(rightLabel)}</span>
           <div class="circle-card-content">
             <div class="circle-svg-wrap">
               <svg width="44" height="44" viewBox="0 0 44 44">
@@ -273,7 +279,7 @@ function renderClaudeDashboard(usage) {
       </div>`;
   } else {
     // Fallback/Scraped DOM view
-    const usageOffset = (113.1 - (113.1 * pct) / 100).toFixed(1);
+    const usageOffset = (113.1 - (113.1 * Math.min(pct, 100)) / 100).toFixed(1);
     const rem = total - used;
     const fallbackColor = getColorForPct(pct);
 
@@ -365,7 +371,7 @@ function renderClaudeDashboard(usage) {
               <line x1="12" y1="16" x2="12" y2="12"></line>
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
-            <span>Subscribed via ${providerName} app. Manage subscription on your ${deviceName}.</span>
+            <span>Subscribed via ${esc(providerName)} app. Manage subscription on your ${esc(deviceName)}.</span>
           </div>`;
   } else {
     dateSectionHtml = `
@@ -423,7 +429,7 @@ function renderClaudeDashboard(usage) {
         <span class="card-label">Plan Details</span>
         <div class="plan-details-content">
           <div class="plan-info-row">
-            <span class="plan-type-badge ${planBadgeClass}">${planType}</span>
+            <span class="plan-type-badge ${planBadgeClass}">${esc(planType)}</span>
             <span class="plan-billing-cycle">${billingText}</span>
           </div>
           ${dateSectionHtml}
@@ -611,7 +617,7 @@ function renderCopilotDashboard(cu) {
     topCardHtml = `
       <div class="bento-card">
         <span class="card-label">COPILOT PLAN</span>
-        <span class="weekly-value" style="font-size: 18px; color: var(--text-white);">${planType}</span>
+        <span class="weekly-value" style="font-size: 18px; color: var(--text-white);">${esc(planType)}</span>
         <span class="reset-text">Free plan · no usage limits</span>
       </div>`;
   }
@@ -622,7 +628,7 @@ function renderCopilotDashboard(cu) {
     const seatTotal = cu.seats.total != null ? cu.seats.total : '?';
     const seatPct = cu.seats.total ? Math.round((cu.seats.used / cu.seats.total) * 100) : null;
     const seatColor = seatPct != null ? getColorForPct(seatPct).circle : 'var(--label-color)';
-    const seatOffset = seatPct != null ? (113.1 - (113.1 * seatPct) / 100).toFixed(1) : '113.1';
+    const seatOffset = seatPct != null ? (113.1 - (113.1 * Math.min(seatPct, 100)) / 100).toFixed(1) : '113.1';
     seatsHtml = `
       <div class="bento-card">
         <span class="card-label">Seats</span>
@@ -673,7 +679,7 @@ function renderCopilotDashboard(cu) {
         <span class="card-label">Plan Details</span>
         <div class="plan-details-content">
           <div class="plan-info-row">
-            <span class="plan-type-badge ${planBadgeClass}">${planType}</span>
+            <span class="plan-type-badge ${planBadgeClass}">${esc(planType)}</span>
             <span class="plan-billing-cycle">${billingText}</span>
           </div>
           ${dateSectionHtml}
@@ -683,7 +689,7 @@ function renderCopilotDashboard(cu) {
         <span class="card-label">Plan Details</span>
         <div class="plan-details-content">
           <div class="plan-info-row">
-            <span class="plan-type-badge ${planBadgeClass}">${planType}</span>
+            <span class="plan-type-badge ${planBadgeClass}">${esc(planType)}</span>
             <span class="plan-billing-cycle">${billingText}</span>
           </div>
           ${dateSectionHtml}
@@ -737,13 +743,16 @@ function renderUI(activeService, usage, copilotUsage, showCopilot) {
   }
 }
 
-// Listen to storage changes reactively to sync updates
+let _renderTimer = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.usage || changes.copilotUsage || changes.activeService || changes.showCopilot) {
-    chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (data) => {
-      renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot);
-    });
+    clearTimeout(_renderTimer);
+    _renderTimer = setTimeout(() => {
+      chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (data) => {
+        renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot);
+      });
+    }, 150);
   }
 });
 

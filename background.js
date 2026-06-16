@@ -50,7 +50,7 @@ function updateBadge(u, cu) {
   if (!hasAnyData) return;
 
   const color = getBadgeColor(displayPct);
-  chrome.action.setBadgeText({ text: displayPct + '%' });
+  chrome.action.setBadgeText({ text: Math.min(displayPct, 100) + '%' });
   chrome.action.setBadgeBackgroundColor({ color });
   if (typeof chrome.action.setBadgeTextColor === 'function') {
     chrome.action.setBadgeTextColor({ color: '#ffffff' });
@@ -264,8 +264,14 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.refreshInterval) {
+  if (area !== 'local') return;
+  if (changes.refreshInterval) {
     applyRefreshAlarm(changes.refreshInterval.newValue || DEFAULT_REFRESH_MINUTES);
+  }
+  if (changes.showCopilot && changes.showCopilot.newValue === false) {
+    copilotUsage = null;
+    chrome.storage.local.remove('copilotUsage');
+    updateBadge(usage, null);
   }
 });
 
