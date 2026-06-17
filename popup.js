@@ -487,42 +487,26 @@ function triggerRefresh() {
   btn.classList.add('loading');
   btn.innerHTML = `${refreshIcon} <span>Refreshing...</span>`;
 
-  chrome.tabs.query({ url: 'https://claude.ai/*' }, (tabs) => {
-    if (tabs && tabs.length > 0) {
-      // Prefer the active tab, then any non-discarded tab, fallback to tabs[0]
-      const targetTab = tabs.find(t => t.active) || tabs.find(t => !t.discarded) || tabs[0];
-
-      chrome.tabs.sendMessage(targetTab.id, { type: 'REQUEST_REFRESH', force: true })
-        .then((response) => {
-          btn.classList.remove('loading');
-          if (!response || !response.success) {
-            chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
-              renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
-            });
-            return;
-          }
-          if (response.payload) {
-            chrome.storage.local.get(['copilotUsage', 'activeService', 'showCopilot'], (d) => {
-              renderUI(d.activeService || 'claude', response.payload, d.copilotUsage, d.showCopilot);
-            });
-          }
-        })
-        .catch((err) => {
-          btn.classList.remove('loading');
-          chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
-            renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
-          });
-        });
-    } else {
-      btn.innerHTML = `${refreshIcon} <span>No Claude tab open</span>`;
-      setTimeout(() => {
-        btn.classList.remove('loading');
-        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
-          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
-        });
-      }, 1500);
-    }
-  });
+  chrome.runtime.sendMessage({ type: 'TRIGGER_REFRESH' })
+    .then((response) => {
+      btn.classList.remove('loading');
+      chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
+        const payload = (response && response.success) ? response.payload : d.usage;
+        if (!response || !response.success) {
+          btn.innerHTML = `${refreshIcon} <span>Failed to fetch usage</span>`;
+          setTimeout(() => {
+            btn.innerHTML = `${refreshIcon} <span>Refresh Usage Data</span>`;
+          }, 2000);
+        }
+        renderUI(d.activeService || 'claude', payload, d.copilotUsage, d.showCopilot);
+      });
+    })
+    .catch((err) => {
+      btn.classList.remove('loading');
+      chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
+        renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
+      });
+    });
 }
 
 function triggerCopilotRefresh() {

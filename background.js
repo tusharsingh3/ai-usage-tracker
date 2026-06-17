@@ -1,8 +1,8 @@
 // background.js — service worker. Stores usage, updates the badge,
 // schedules refresh/reset alarms, and fires notifications.
 
-const DEFAULT_REFRESH_MINUTES = 5;
-const ENABLE_AUTO_FETCH = false;
+const DEFAULT_REFRESH_MINUTES = 1;
+const ENABLE_AUTO_FETCH = true;
 
 let usage = null;
 let copilotUsage = null;
@@ -190,6 +190,118 @@ function ensureRefreshAlarm() {
   });
 }
 
+function formatResetText(resetsAt) {
+  if (!resetsAt) return null;
+  const rawDiff = new Date(resetsAt).getTime() - Date.now();
+  if (rawDiff <= 0) return '0m';
+  
+  // Round to nearest minute to prevent off-by-one errors from millisecond diffs
+  const diff = Math.round(rawDiff / 60000) * 60000;
+  if (diff <= 0) return '0m';
+  
+  const d = Math.floor(diff / (24 * 3600 * 1000));
+  const h = Math.floor((diff % (24 * 3600 * 1000)) / (3600 * 1000));
+  const m = Math.floor((diff % (3600 * 1000)) / (60 * 1000));
+  
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0 || parts.length === 0) parts.push(`${m}m`);
+  return parts.join(' ');
+}
+
+async function fetchClaudeUsage() {
+  try {
+    const orgsResponse = await fetch('https://claude.ai/api/organizations');
+    if (!orgsResponse.ok) return null;
+    const orgs = await orgsResponse.json();
+    if (!orgs || orgs.length === 0) return null;
+
+    // Loop through all organizations to find the highest subscription plan tier
+    let planType = 'Free';
+    let chosenSub = {};
+    let chosenOrg = orgs[0];
+
+    for (const o of orgs) {
+      const oSub = o.active_billing_subscription || o.subscription || {};
+      const oCapabilities = o.capabilities || [];
+      const oTier = (oSub.tier || o.pricing_tier || o.tier || '').toLowerCase();
+
+      let currentType = 'Free';
+      if (oTier.includes('enterprise') || oCapabilities.some(c => c.toLowerCase().includes('enterprise'))) {
+        currentType = 'Enterprise';
+      } else if (oTier.includes('team') || oCapabilities.some(c => c.toLowerCase().includes('team'))) {
+        currentType = 'Team';
+      } else if (oTier.includes('pro') || oCapabilities.some(c => c.toLowerCase().includes('pro'))) {
+        currentType = 'Pro';
+      } else if (oTier) {
+        currentType = oTier.charAt(0).toUpperCase() + oTier.slice(1);
+      }
+
+      // Elevate planType if a higher one is found
+      if (currentType === 'Enterprise') {
+        planType = 'Enterprise';
+        chosenSub = oSub;
+        chosenOrg = o;
+      } else if (currentType === 'Team' && planType !== 'Enterprise') {
+        planType = 'Team';
+        chosenSub = oSub;
+        chosenOrg = o;
+      } else if (currentType === 'Pro' && planType !== 'Enterprise' && planType !== 'Team') {
+        planType = 'Pro';
+        chosenSub = oSub;
+        chosenOrg = o;
+      } else if (planType === 'Free' && currentType !== 'Free') {
+        planType = currentType;
+        chosenSub = oSub;
+        chosenOrg = o;
+      }
+    }
+
+    const orgId = chosenOrg.uuid;
+    const orgName = chosenOrg.name || 'Claude Limits';
+
+    const plan = {
+      type: planType,
+      startDate: chosenSub.current_period_start || chosenSub.start_date || null,
+      endDate: chosenSub.current_period_end || chosenSub.end_date || null,
+      provider: chosenSub.provider || chosenSub.payment_processor || null
+    };
+
+    const usageResponse = await fetch(`https://claude.ai/api/organizations/${orgId}/usage`);
+    if (!usageResponse.ok) return null;
+    const usageData = await usageResponse.json();
+
+    const maxPct = Math.round(Math.max(
+      usageData.five_hour?.utilization || 0,
+      usageData.seven_day?.utilization || 0,
+      usageData.seven_day_sonnet?.utilization || 0,
+      usageData.seven_day_opus?.utilization || 0
+    ));
+
+    return {
+      source: 'api',
+      orgName,
+      orgId,
+      five_hour: usageData.five_hour,
+      seven_day: usageData.seven_day,
+      seven_day_sonnet: usageData.seven_day_sonnet,
+      seven_day_opus: usageData.seven_day_opus,
+      extra_usage: usageData.extra_usage,
+      pct: maxPct,
+      used: Math.round(usageData.seven_day?.utilization || 0),
+      total: 100,
+      resetText: formatResetText(usageData.seven_day?.resets_at),
+      ts: Date.now(),
+      plan,
+      debug_org: chosenOrg
+    };
+  } catch (err) {
+    console.debug('[AI Usage Tracker] Background Claude API fetch failed:', err);
+    return null;
+  }
+}
+
 function handleUsageUpdate(payload) {
   usage = payload;
   chrome.storage.local.set({ usage });
@@ -204,33 +316,38 @@ function handleCopilotUsageUpdate(payload) {
   updateBadge(usage, copilotUsage);
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'USAGE_UPDATE') {
     handleUsageUpdate(msg.payload);
   }
   if (msg.type === 'COPILOT_USAGE_UPDATE') {
     handleCopilotUsageUpdate(msg.payload);
   }
+  if (msg.type === 'TRIGGER_REFRESH') {
+    fetchClaudeUsage()
+      .then((payload) => {
+        if (payload) {
+          handleUsageUpdate(payload);
+          sendResponse({ success: true, payload });
+        } else {
+          sendResponse({ success: false });
+        }
+      })
+      .catch((err) => {
+        sendResponse({ success: false, error: err.toString() });
+      });
+    return true; // Keeps channel open for async response
+  }
+
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'refresh') {
-    // Auto-fetch is disabled by default; uncomment/enable when needed
     if (ENABLE_AUTO_FETCH) {
-      chrome.tabs.query({ url: 'https://claude.ai/*' }, (tabs) => {
-        tabs.forEach((tab) => {
-          chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_REFRESH' })
-            .catch((err) => {
-              // No content script in this tab or tab was closed — ignore.
-            });
-        });
-      });
-      chrome.tabs.query({ url: 'https://github.com/settings/*' }, (tabs) => {
-        tabs.forEach((tab) => {
-          chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COPILOT_REFRESH' })
-            .catch(() => {});
-        });
-      });
+      fetchClaudeUsage().then((payload) => {
+        if (payload) handleUsageUpdate(payload);
+      }).catch(() => {});
+
     }
   }
 
