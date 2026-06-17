@@ -1,4 +1,5 @@
 const DEFAULT_REFRESH_MINUTES = 5;
+const ENABLE_AUTO_FETCH = false;
 
 const select = document.getElementById('interval');
 const saved = document.getElementById('saved');
@@ -6,6 +7,18 @@ const notify50 = document.getElementById('notify-50');
 const notify80 = document.getElementById('notify-80');
 const notify100 = document.getElementById('notify-100');
 const showCopilot = document.getElementById('show-copilot');
+
+// Hide interval UI field dynamically if flag is false
+if (!ENABLE_AUTO_FETCH) {
+  const intervalField = select?.closest('.field');
+  if (intervalField) {
+    intervalField.style.display = 'none';
+  }
+  const subText = document.querySelector('.sub');
+  if (subText) {
+    subText.textContent = 'Configure notifications and integrations.';
+  }
+}
 
 function showSaved() {
   saved.classList.add('show');
@@ -37,7 +50,7 @@ chrome.storage.local.get([
 
 select.addEventListener('change', () => {
   const minutes = Number(select.value);
-  const VALID_INTERVALS = [5, 10, 15, 30];
+  const VALID_INTERVALS = [5, 10, 15, 20, 25, 30];
   if (!VALID_INTERVALS.includes(minutes)) return;
   chrome.storage.local.set({ refreshInterval: minutes }, showSaved);
 });

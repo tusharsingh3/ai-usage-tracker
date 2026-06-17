@@ -2,6 +2,7 @@
 // schedules refresh/reset alarms, and fires notifications.
 
 const DEFAULT_REFRESH_MINUTES = 5;
+const ENABLE_AUTO_FETCH = false;
 
 let usage = null;
 let copilotUsage = null;
@@ -39,23 +40,6 @@ function formatToolbarTime(resetsAt) {
 }
 
 function updateBadge(u, cu) {
-  // Badge shows session usage for Claude (five_hour), not the overall max
-  const claudePct = u
-    ? (u.source === 'api' ? Math.round(u.five_hour?.utilization || 0) : u.pct || 0)
-    : 0;
-  const copilotPct = (cu?.pct != null) ? cu.pct : 0;
-  const displayPct = Math.max(claudePct, copilotPct);
-  const hasAnyData = u || cu;
-
-  if (!hasAnyData) return;
-
-  const color = getBadgeColor(displayPct);
-  chrome.action.setBadgeText({ text: Math.min(displayPct, 100) + '%' });
-  chrome.action.setBadgeBackgroundColor({ color });
-  if (typeof chrome.action.setBadgeTextColor === 'function') {
-    chrome.action.setBadgeTextColor({ color: '#ffffff' });
-  }
-
   // Build tooltip — Claude line shows session usage with reset time
   let claudeLine = '';
   if (u) {
@@ -74,6 +58,20 @@ function updateBadge(u, cu) {
   const copilotLine = cu ? `Copilot - ${cu.pct != null ? cu.pct + '%' : '—'}` : 'Copilot - —';
 
   chrome.action.setTitle({ title: claudeLine + '\n' + copilotLine });
+
+  // Badge always shows Claude usage
+  if (!u) {
+    chrome.action.setBadgeText({ text: '' });
+    return;
+  }
+
+  const claudePct = u.source === 'api' ? Math.round(u.five_hour?.utilization || 0) : u.pct || 0;
+  const color = getBadgeColor(claudePct);
+  chrome.action.setBadgeText({ text: Math.min(claudePct, 100) + '%' });
+  chrome.action.setBadgeBackgroundColor({ color });
+  if (typeof chrome.action.setBadgeTextColor === 'function') {
+    chrome.action.setBadgeTextColor({ color: '#ffffff' });
+  }
 }
 
 function maybeNotify(u) {
@@ -181,8 +179,14 @@ function applyRefreshAlarm(minutes) {
 }
 
 function ensureRefreshAlarm() {
+  if (!ENABLE_AUTO_FETCH) return;
   chrome.storage.local.get(['refreshInterval'], ({ refreshInterval }) => {
-    applyRefreshAlarm(refreshInterval || DEFAULT_REFRESH_MINUTES);
+    const minutes = refreshInterval || DEFAULT_REFRESH_MINUTES;
+    chrome.alarms.get('refresh', (alarm) => {
+      if (!alarm || alarm.periodInMinutes !== minutes) {
+        applyRefreshAlarm(minutes);
+      }
+    });
   });
 }
 
@@ -211,20 +215,23 @@ chrome.runtime.onMessage.addListener((msg) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'refresh') {
-    chrome.tabs.query({ url: 'https://claude.ai/*' }, (tabs) => {
-      tabs.forEach((tab) => {
-        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_REFRESH' })
-          .catch((err) => {
-            // No content script in this tab or tab was closed — ignore.
-          });
+    // Auto-fetch is disabled by default; uncomment/enable when needed
+    if (ENABLE_AUTO_FETCH) {
+      chrome.tabs.query({ url: 'https://claude.ai/*' }, (tabs) => {
+        tabs.forEach((tab) => {
+          chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_REFRESH' })
+            .catch((err) => {
+              // No content script in this tab or tab was closed — ignore.
+            });
+        });
       });
-    });
-    chrome.tabs.query({ url: 'https://github.com/settings/*' }, (tabs) => {
-      tabs.forEach((tab) => {
-        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COPILOT_REFRESH' })
-          .catch(() => {});
+      chrome.tabs.query({ url: 'https://github.com/settings/*' }, (tabs) => {
+        tabs.forEach((tab) => {
+          chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_COPILOT_REFRESH' })
+            .catch(() => {});
+        });
       });
-    });
+    }
   }
 
   if (alarm.name === 'reset') {
@@ -254,19 +261,21 @@ function restoreFromStorage() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  ensureRefreshAlarm();
+  if (ENABLE_AUTO_FETCH) ensureRefreshAlarm();
   restoreFromStorage();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  ensureRefreshAlarm();
+  if (ENABLE_AUTO_FETCH) ensureRefreshAlarm();
   restoreFromStorage();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.refreshInterval) {
-    applyRefreshAlarm(changes.refreshInterval.newValue || DEFAULT_REFRESH_MINUTES);
+    if (ENABLE_AUTO_FETCH) {
+      applyRefreshAlarm(changes.refreshInterval.newValue || DEFAULT_REFRESH_MINUTES);
+    }
   }
   if (changes.showCopilot && changes.showCopilot.newValue === false) {
     copilotUsage = null;
@@ -275,5 +284,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-ensureRefreshAlarm();
+// ensureRefreshAlarm(); // Disabled by default
 restoreFromStorage();

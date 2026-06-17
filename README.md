@@ -6,9 +6,9 @@ A Chrome extension that tracks your Claude and GitHub Copilot usage limits — a
 
 - **Claude** — session limits, weekly limits, plan type, reset times, extra charges, org name
 - **GitHub Copilot** — AI credits, billing spend, seats, plan type, cycle dates
-- **Unified badge** — toolbar icon shows combined usage at a glance
-- **Notifications** — alerts at 50%, 80%, and 100% usage (configurable)
-- **Auto-refresh** — polls in the background every 5–30 minutes (configurable)
+- **Badge** — toolbar icon shows Claude usage at a glance
+- **Notifications** — alerts for Claude usage at 50%, 80%, and 100% (configurable)
+- **Auto-refresh** — (Disabled by default, toggleable in code) polls in the background every 5–30 minutes (configurable)
 - **Dark / Light theme** — toggle in the popup
 - **All data stays local** — nothing sent to any server; stored in `chrome.storage.local`
 
@@ -45,7 +45,7 @@ A Chrome extension that tracks your Claude and GitHub Copilot usage limits — a
 
 Open the extension options page to configure:
 
-- **Refresh interval** — 5 / 10 / 15 / 30 minutes
+- **Refresh interval** — (Disabled by default) 5 / 10 / 15 / 30 minutes
 - **Notifications** — enable/disable at 50%, 80%, 100% thresholds
 - **Show Copilot** — toggle GitHub Copilot section in the popup
 

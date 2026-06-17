@@ -591,7 +591,7 @@ function renderCopilotDashboard(cu) {
         </button>
         <div class="footer-row">
           <button class="footer-link" id="settings-btn" type="button">Settings</button>
-          <a class="footer-link" href="https://github.com/settings/billing" target="_blank">Open Billing →</a>
+          <a class="footer-link" href="https://github.com/settings/billing/ai_usage" target="_blank">Open Billing →</a>
         </div>
       </div>`;
     setupThemeToggle();
@@ -725,7 +725,7 @@ function renderCopilotDashboard(cu) {
 
       <div class="footer-row">
         <button class="footer-link" id="settings-btn" type="button">Settings</button>
-        <a class="footer-link" href="https://github.com/settings/billing" target="_blank">Open Billing →</a>
+        <a class="footer-link" href="https://github.com/settings/billing/ai_usage" target="_blank">Open Billing →</a>
       </div>
     </div>`;
 
