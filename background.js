@@ -1,7 +1,7 @@
 // background.js — service worker. Stores usage, updates the badge,
 // schedules refresh/reset alarms, and fires notifications.
 
-const DEFAULT_REFRESH_MINUTES = 1;
+const DEFAULT_REFRESH_MINUTES = 15;
 const ENABLE_AUTO_FETCH = true;
 
 let usage = null;

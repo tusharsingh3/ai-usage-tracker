@@ -1,4 +1,4 @@
-const DEFAULT_REFRESH_MINUTES = 1;
+const DEFAULT_REFRESH_MINUTES = 15;
 const ENABLE_AUTO_FETCH = true;
 
 const select = document.getElementById('interval');
@@ -50,7 +50,7 @@ chrome.storage.local.get([
 
 select.addEventListener('change', () => {
   const minutes = Number(select.value);
-  const VALID_INTERVALS = [1, 5, 10, 15, 20, 25, 30];
+  const VALID_INTERVALS = [5, 10, 15, 20, 25, 30];
   if (!VALID_INTERVALS.includes(minutes)) return;
   chrome.storage.local.set({ refreshInterval: minutes }, showSaved);
 });
