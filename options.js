@@ -7,6 +7,9 @@ const notify50 = document.getElementById('notify-50');
 const notify80 = document.getElementById('notify-80');
 const notify100 = document.getElementById('notify-100');
 const showCopilot = document.getElementById('show-copilot');
+const showChatGPT = document.getElementById('show-chatgpt');
+const showCodex = document.getElementById('show-codex');
+const badgeService = document.getElementById('badge-service');
 
 // Hide interval UI field dynamically if flag is false
 if (!ENABLE_AUTO_FETCH) {
@@ -32,6 +35,9 @@ chrome.storage.local.get([
   'notify80',
   'notify100',
   'showCopilot',
+  'showChatGPT',
+  'showCodex',
+  'badgeService',
 ], (data) => {
   select.value = String(data.refreshInterval || DEFAULT_REFRESH_MINUTES);
 
@@ -40,6 +46,9 @@ chrome.storage.local.get([
   notify80.checked = data.notify80 !== false;
   notify100.checked = data.notify100 !== false;
   showCopilot.checked = data.showCopilot !== false;
+  showChatGPT.checked = data.showChatGPT !== false;
+  showCodex.checked = data.showCodex !== false;
+  badgeService.value = data.badgeService || 'highest';
 
   if (data.theme === 'light') {
     document.body.classList.add('light-theme');
@@ -55,13 +64,19 @@ select.addEventListener('change', () => {
   chrome.storage.local.set({ refreshInterval: minutes }, showSaved);
 });
 
-[notify50, notify80, notify100, showCopilot].forEach(cb => {
+[notify50, notify80, notify100, showCopilot, showChatGPT, showCodex].forEach(cb => {
   cb.addEventListener('change', () => {
     chrome.storage.local.set({
       notify50: notify50.checked,
       notify80: notify80.checked,
       notify100: notify100.checked,
       showCopilot: showCopilot.checked,
+      showChatGPT: showChatGPT.checked,
+      showCodex: showCodex.checked,
     }, showSaved);
   });
+});
+
+badgeService.addEventListener('change', () => {
+  chrome.storage.local.set({ badgeService: badgeService.value }, showSaved);
 });

@@ -72,19 +72,19 @@
   </div>
 
   <div class="field" style="margin-top: 20px;">
-    <label style="font-weight: 600; font-size: 13px; color: var(--title-color); margin-bottom: 8px;">Push Notifications (For Claude Usage Only)</label>
+    <label style="font-weight: 600; font-size: 13px; color: var(--title-color); margin-bottom: 8px;">Push Notifications</label>
     <div style="display: flex; flex-direction: column; gap: 8px;">
       <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
         <input type="checkbox" id="notify-50">
-        <span>Notify on 50% session limit crossed</span>
+        <span>Notify when any measurable limit crosses 50%</span>
       </label>
       <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
         <input type="checkbox" id="notify-80">
-        <span>Notify on 80% overall limit crossed</span>
+        <span>Notify when any measurable limit crosses 80%</span>
       </label>
       <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
         <input type="checkbox" id="notify-100">
-        <span>Notify when limit is reached (100%)</span>
+        <span>Notify when any limit is reached (100%)</span>
       </label>
     </div>
   </div>
@@ -93,10 +93,30 @@
     <label style="font-weight: 600; font-size: 13px; color: var(--title-color); margin-bottom: 8px;">Integrations</label>
     <div style="display: flex; flex-direction: column; gap: 8px;">
       <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
+        <input type="checkbox" id="show-chatgpt">
+        <span>Show ChatGPT tab</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
+        <input type="checkbox" id="show-codex">
+        <span>Show Codex tab</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; color: var(--text-color); cursor: pointer; font-size: 13px; margin-bottom: 0;">
         <input type="checkbox" id="show-copilot">
         <span>Show GitHub Copilot tab <span style="display:inline-block;font-size:9px;font-weight:600;letter-spacing:0.03em;text-transform:uppercase;background:#e58c77;color:#fff;border-radius:3px;padding:1px 4px;vertical-align:middle;">beta</span></span>
       </label>
     </div>
+  </div>
+
+  <div class="field" style="margin-top: 20px;">
+    <label for="badge-service">Toolbar badge</label>
+    <select id="badge-service">
+      <option value="highest">Highest enabled usage</option>
+      <option value="active">Active popup tab</option>
+      <option value="claude">Claude</option>
+      <option value="chatgpt">ChatGPT</option>
+      <option value="codex">Codex</option>
+      <option value="copilot">GitHub Copilot</option>
+    </select>
   </div>
 
   <div class="saved" id="saved">Saved</div>

@@ -4,8 +4,12 @@
 const DEFAULT_REFRESH_MINUTES = 15;
 const ENABLE_AUTO_FETCH = true;
 
-let usage = null;
-let copilotUsage = null;
+let usageByService = {
+  claude: null,
+  chatgpt: null,
+  codex: null,
+  copilot: null,
+};
 
 function getBadgeColor(pct) {
   if (pct < 50) return '#1D9E75';  // green
@@ -39,137 +43,115 @@ function formatToolbarTime(resetsAt) {
   return parts.join(' ');
 }
 
-function updateBadge(u, cu) {
-  // Build tooltip — Claude line shows session usage with reset time
-  let claudeLine = '';
-  if (u) {
-    if (u.source === 'api') {
-      const sessionPct = Math.round(u.five_hour?.utilization || 0);
-      const resetStr   = formatToolbarTime(u.five_hour?.resets_at);
-      claudeLine = `Claude - ${sessionPct}%` + (resetStr ? ` / ${resetStr}` : '');
-    } else {
-      claudeLine = `Claude - ${u.pct}%` + (u.resetText ? ` / ${u.resetText}` : '');
+function getLimitEntries(service, payload) {
+  if (!payload) return [];
+  if (service === 'claude') {
+    if (payload.source === 'api') {
+      return [
+        ['Session', payload.five_hour?.utilization, payload.five_hour?.resets_at],
+        ['Weekly', payload.seven_day?.utilization, payload.seven_day?.resets_at],
+      ];
     }
-  } else {
-    claudeLine = 'Claude - —';
+    return [['Messages', payload.pct, null]];
   }
-
-  // Copilot line: just pct, no reset time
-  const copilotLine = cu ? `Copilot - ${cu.pct != null ? cu.pct + '%' : '—'}` : 'Copilot - —';
-
-  chrome.action.setTitle({ title: claudeLine + '\n' + copilotLine });
-
-  // Badge always shows Claude usage
-  if (!u) {
-    chrome.action.setBadgeText({ text: '' });
-    return;
+  if (service === 'codex') {
+    return Object.entries(payload.limits || {}).map(([key, value]) => [value.label || key, value.utilization, value.resetsAt]);
   }
-
-  const claudePct = u.source === 'api' ? Math.round(u.five_hour?.utilization || 0) : u.pct || 0;
-  const color = getBadgeColor(claudePct);
-  chrome.action.setBadgeText({ text: Math.min(claudePct, 100) + '%' });
-  chrome.action.setBadgeBackgroundColor({ color });
-  if (typeof chrome.action.setBadgeTextColor === 'function') {
-    chrome.action.setBadgeTextColor({ color: '#ffffff' });
+  if (service === 'chatgpt') {
+    return (payload.quotas || []).map(value => [value.label || 'Quota', value.utilization, value.resetsAt]);
   }
+  if (service === 'copilot') {
+    const credits = payload.aiCredits;
+    const pct = credits?.total ? Math.round((credits.used / credits.total) * 100) : payload.pct;
+    return [['AI credits', pct, null]];
+  }
+  return [];
 }
 
-function maybeNotify(u) {
-  chrome.storage.local.get([
-    'notifiedThresholds',
-    'notify50',
-    'notify80',
-    'notify100'
-  ], (data) => {
-    const notified = data.notifiedThresholds || { p50: false, p80: false, p100: false };
-    
-    // Check if notifications are enabled (default to true)
-    const en50 = data.notify50 !== false;
-    const en80 = data.notify80 !== false;
-    const en100 = data.notify100 !== false;
-    
-    const sessionPct = u.source === 'api' ? Math.round(u.five_hour?.utilization || 0) : u.pct;
-    const overallPct = u.pct;
-    
-    let updated = false;
-    
-    // 1. Cross 50% session usage
-    if (sessionPct >= 50 && !notified.p50) {
-      if (en50) {
-        chrome.notifications.create('limit-50', {
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Claude Limit: 50% Session Crossed',
-          message: `Session usage is at ${sessionPct}%.` +
-                   (u.resetText ? ` Resets in ${u.resetText}.` : '')
-        });
-      }
-      notified.p50 = true;
-      updated = true;
+function getServicePct(service, payload) {
+  const values = getLimitEntries(service, payload)
+    .map(([, pct]) => Number(pct))
+    .filter(Number.isFinite);
+  return values.length ? Math.max(...values) : null;
+}
+
+function updateBadge() {
+  chrome.storage.local.get(['badgeService', 'activeService', 'showChatGPT', 'showCodex', 'showCopilot'], settings => {
+    const enabled = ['claude'];
+    if (settings.showChatGPT !== false) enabled.push('chatgpt');
+    if (settings.showCodex !== false) enabled.push('codex');
+    if (settings.showCopilot !== false) enabled.push('copilot');
+
+    const labels = { claude: 'Claude', chatgpt: 'ChatGPT', codex: 'Codex', copilot: 'Copilot' };
+    const candidates = enabled.map(service => ({
+      service,
+      payload: usageByService[service],
+      pct: getServicePct(service, usageByService[service]),
+    }));
+
+    const tooltip = candidates.map(({ service, payload, pct }) => {
+      const firstReset = getLimitEntries(service, payload).find(([, value, reset]) => Number.isFinite(Number(value)) && reset)?.[2];
+      const resetText = formatToolbarTime(firstReset);
+      return `${labels[service]} - ${pct == null ? '—' : `${Math.round(pct)}%`}${resetText ? ` / ${resetText}` : ''}`;
+    }).join('\n');
+    chrome.action.setTitle({ title: tooltip || 'AI Usage Tracker' });
+
+    let selected;
+    const badgeMode = settings.badgeService || 'highest';
+    if (badgeMode === 'active') {
+      selected = candidates.find(item => item.service === settings.activeService);
+    } else if (badgeMode !== 'highest') {
+      selected = candidates.find(item => item.service === badgeMode);
     }
-    
-    // 2. Cross 80% overall limit
-    if (overallPct >= 80 && !notified.p80) {
-      if (en80) {
-        chrome.notifications.create('limit-80', {
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Claude Limit: 80% Crossed',
-          message: `Overall limit is at ${overallPct}%.` +
-                   (u.resetText ? ` Resets in ${u.resetText}.` : '')
-        });
-      }
-      notified.p80 = true;
-      updated = true;
+    if (!selected || selected.pct == null) {
+      selected = candidates.filter(item => item.pct != null).sort((a, b) => b.pct - a.pct)[0];
     }
-    
-    // 3. Cross 100% (finished)
-    if (overallPct >= 100 && !notified.p100) {
-      if (en100) {
-        chrome.notifications.create('limit-100', {
-          type: 'basic',
-          iconUrl: 'icons/icon48.png',
-          title: 'Claude Limit reached (100%)',
-          message: `You have reached 100% of your Claude message limit.` +
-                   (u.resetText ? ` Resets in ${u.resetText}.` : '')
-        });
-      }
-      notified.p100 = true;
-      updated = true;
+
+    if (!selected || selected.pct == null) {
+      chrome.action.setBadgeText({ text: '' });
+      return;
     }
-    
-    // Reset flags if values drop back down (meaning a reset happened)
-    if (sessionPct < 50 && notified.p50) {
-      notified.p50 = false;
-      updated = true;
-    }
-    if (overallPct < 80 && notified.p80) {
-      notified.p80 = false;
-      updated = true;
-    }
-    if (overallPct < 100 && notified.p100) {
-      notified.p100 = false;
-      updated = true;
-    }
-    
-    if (updated) {
-      chrome.storage.local.set({ notifiedThresholds: notified });
-    }
+    const pct = Math.max(0, Math.min(100, Math.round(selected.pct)));
+    chrome.action.setBadgeText({ text: `${pct}%` });
+    chrome.action.setBadgeBackgroundColor({ color: getBadgeColor(pct) });
+    if (typeof chrome.action.setBadgeTextColor === 'function') chrome.action.setBadgeTextColor({ color: '#ffffff' });
   });
 }
 
-function parseResetHours(text) {
-  if (!text) return 0;
-  const h = parseInt(text.match(/(\d+)h/)?.[1] ?? 0);
-  const m = parseInt(text.match(/(\d+)m/)?.[1] ?? 0);
-  return h + m / 60;
-}
+function maybeNotify(service, payload) {
+  const entries = getLimitEntries(service, payload);
+  if (!entries.length) return;
+  chrome.storage.local.get(['notificationState', 'notify50', 'notify80', 'notify100'], data => {
+    const state = data.notificationState || {};
+    state[service] ||= {};
+    const labels = { claude: 'Claude', chatgpt: 'ChatGPT', codex: 'Codex', copilot: 'Copilot' };
+    const enabled = { 50: data.notify50 !== false, 80: data.notify80 !== false, 100: data.notify100 !== false };
 
-function scheduleResetAlarm(resetText) {
-  if (!resetText) return;
-  const hrs = parseResetHours(resetText);
-  if (hrs <= 0) return;
-  chrome.alarms.create('reset', { delayInMinutes: Math.ceil(hrs * 60) });
+    for (const [label, rawPct, resetsAt] of entries) {
+      const pct = Math.round(Number(rawPct));
+      if (!Number.isFinite(pct)) continue;
+      const key = String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      state[service][key] ||= { p50: false, p80: false, p100: false };
+      const limitState = state[service][key];
+      for (const threshold of [50, 80, 100]) {
+        const flag = `p${threshold}`;
+        if (pct >= threshold && !limitState[flag]) {
+          if (enabled[threshold]) {
+            const resetText = formatToolbarTime(resetsAt);
+            chrome.notifications.create(`${service}-${key}-${threshold}`, {
+              type: 'basic', iconUrl: 'icons/icon48.png',
+              title: `${labels[service]} ${label}: ${threshold}% crossed`,
+              message: `${label} usage is at ${pct}%.${resetText ? ` Resets in ${resetText}.` : ''}`,
+            });
+          }
+          limitState[flag] = true;
+        } else if (pct < threshold) {
+          limitState[flag] = false;
+        }
+      }
+    }
+    chrome.storage.local.set({ notificationState: state });
+  });
 }
 
 function applyRefreshAlarm(minutes) {
@@ -302,78 +284,90 @@ async function fetchClaudeUsage() {
   }
 }
 
-function handleUsageUpdate(payload) {
-  usage = payload;
-  chrome.storage.local.set({ usage });
-  updateBadge(usage, copilotUsage);
-  maybeNotify(usage);
-  scheduleResetAlarm(usage.resetText);
+function handleServiceUsageUpdate(service, payload) {
+  if (!Object.prototype.hasOwnProperty.call(usageByService, service) || !payload) return;
+  usageByService[service] = payload;
+  const legacy = {};
+  if (service === 'claude') legacy.usage = payload;
+  if (service === 'copilot') legacy.copilotUsage = payload;
+  chrome.storage.local.set({ usageByService, ...legacy });
+  updateBadge();
+  maybeNotify(service, payload);
 }
 
-function handleCopilotUsageUpdate(payload) {
-  copilotUsage = payload;
-  chrome.storage.local.set({ copilotUsage });
-  updateBadge(usage, copilotUsage);
+async function sendRefreshToTab(url, message) {
+  const tabs = await chrome.tabs.query({ url });
+  const target = tabs.find(tab => tab.active) || tabs.find(tab => !tab.discarded) || tabs[0];
+  if (!target?.id) return { success: false, error: 'PAGE_REQUIRED' };
+  try {
+    return await chrome.tabs.sendMessage(target.id, message);
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+async function refreshService(service) {
+  if (service === 'claude') {
+    const payload = await fetchClaudeUsage();
+    if (payload) handleServiceUsageUpdate('claude', payload);
+    return { success: Boolean(payload), payload };
+  }
+  if (service === 'chatgpt' || service === 'codex') {
+    return sendRefreshToTab('https://chatgpt.com/*', { type: 'REQUEST_OPENAI_REFRESH', force: true });
+  }
+  if (service === 'copilot') {
+    return sendRefreshToTab('https://github.com/settings/*', { type: 'REQUEST_COPILOT_REFRESH', force: true });
+  }
+  return { success: false, error: 'UNKNOWN_SERVICE' };
+}
+
+async function refreshEnabledServices() {
+  const settings = await chrome.storage.local.get(['showChatGPT', 'showCodex', 'showCopilot']);
+  const services = ['claude'];
+  if (settings.showChatGPT !== false || settings.showCodex !== false) services.push('chatgpt');
+  if (settings.showCopilot !== false) services.push('copilot');
+  await Promise.allSettled(services.map(refreshService));
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'USAGE_UPDATE') {
-    handleUsageUpdate(msg.payload);
-  }
-  if (msg.type === 'COPILOT_USAGE_UPDATE') {
-    handleCopilotUsageUpdate(msg.payload);
-  }
+  if (msg.type === 'USAGE_UPDATE') handleServiceUsageUpdate('claude', msg.payload);
+  if (msg.type === 'COPILOT_USAGE_UPDATE') handleServiceUsageUpdate('copilot', msg.payload);
+  if (msg.type === 'SERVICE_USAGE_UPDATE') handleServiceUsageUpdate(msg.service, msg.payload);
   if (msg.type === 'TRIGGER_REFRESH') {
-    fetchClaudeUsage()
-      .then((payload) => {
-        if (payload) {
-          handleUsageUpdate(payload);
-          sendResponse({ success: true, payload });
-        } else {
-          sendResponse({ success: false });
-        }
-      })
-      .catch((err) => {
-        sendResponse({ success: false, error: err.toString() });
-      });
-    return true; // Keeps channel open for async response
+    refreshService('claude').then(sendResponse).catch(error => sendResponse({ success: false, error: String(error) }));
+    return true;
   }
-
+  if (msg.type === 'TRIGGER_SERVICE_REFRESH') {
+    refreshService(msg.service).then(sendResponse).catch(error => sendResponse({ success: false, error: String(error) }));
+    return true;
+  }
+  return undefined;
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'refresh') {
-    if (ENABLE_AUTO_FETCH) {
-      fetchClaudeUsage().then((payload) => {
-        if (payload) handleUsageUpdate(payload);
-      }).catch(() => {});
-
-    }
-  }
-
-  if (alarm.name === 'reset') {
-    usage = null;
-    chrome.storage.local.remove(['usage', 'notifiedThresholds']);
-    chrome.action.setBadgeText({ text: '' });
-    chrome.action.setBadgeBackgroundColor({ color: '#888780' });
-    // If copilot still has data, restore its badge
-    if (copilotUsage) updateBadge(null, copilotUsage);
+    if (ENABLE_AUTO_FETCH) refreshEnabledServices().catch(() => {});
   }
 });
 
 chrome.tabs.onActivated.addListener(() => {
-  if (usage || copilotUsage) updateBadge(usage, copilotUsage);
+  updateBadge();
 });
 
 chrome.tabs.onUpdated.addListener((_, info) => {
-  if (info.status === 'complete' && (usage || copilotUsage)) updateBadge(usage, copilotUsage);
+  if (info.status === 'complete') updateBadge();
 });
 
 function restoreFromStorage() {
-  chrome.storage.local.get(['usage', 'copilotUsage'], ({ usage: u, copilotUsage: cu }) => {
-    if (u) usage = u;
-    if (cu) copilotUsage = cu;
-    if (u || cu) updateBadge(usage, copilotUsage);
+  chrome.storage.local.get(['usageByService', 'usage', 'copilotUsage'], data => {
+    usageByService = {
+      ...usageByService,
+      ...(data.usageByService || {}),
+      claude: data.usageByService?.claude || data.usage || null,
+      copilot: data.usageByService?.copilot || data.copilotUsage || null,
+    };
+    chrome.storage.local.set({ usageByService, schemaVersion: 2 });
+    updateBadge();
   });
 }
 
@@ -394,12 +388,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       applyRefreshAlarm(changes.refreshInterval.newValue || DEFAULT_REFRESH_MINUTES);
     }
   }
-  if (changes.showCopilot && changes.showCopilot.newValue === false) {
-    copilotUsage = null;
-    chrome.storage.local.remove('copilotUsage');
-    updateBadge(usage, null);
-  }
+  if (changes.badgeService || changes.activeService || changes.showChatGPT || changes.showCodex || changes.showCopilot) updateBadge();
 });
 
-// ensureRefreshAlarm(); // Disabled by default
 restoreFromStorage();
