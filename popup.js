@@ -142,8 +142,8 @@ function setupThemeToggle() {
         } else {
           document.body.classList.remove('light-theme');
         }
-        chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (d) => {
-          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot);
+        chrome.storage.local.get(['usage', 'copilotUsage', 'usageByService', 'activeService', 'showCopilot', 'showChatGPT', 'showCodex'], (d) => {
+          renderUI(d.activeService || 'claude', d.usage, d.copilotUsage, d.showCopilot, d.usageByService, d.showChatGPT, d.showCodex);
         });
       });
     });
@@ -718,14 +718,125 @@ function renderCopilotDashboard(cu) {
   document.getElementById('refresh-btn').addEventListener('click', triggerCopilotRefresh);
 }
 
-function renderUI(activeService, usage, copilotUsage, showCopilot) {
+function openAIPlanDetails(data) {
+  const plan = data?.plan || {};
+  const type = plan.type || 'Unknown';
+  const planClass = type.toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+  return `
+    <div class="bento-card plan-details-card">
+      <span class="card-label">Plan Details</span>
+      <div class="plan-details-content">
+        <div class="plan-info-row">
+          <span class="plan-type-badge plan-${planClass}">${esc(type)}</span>
+          <span class="plan-billing-cycle">${plan.workspace ? esc(plan.workspace) : 'Personal workspace'}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+function openAILimitCard(label, limit) {
+  const pct = Number(limit?.utilization);
+  const hasPct = limit?.utilization != null && Number.isFinite(pct);
+  const safePct = hasPct ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
+  const color = getColorForPct(safePct);
+  const reset = formatResetText(limit?.resetsAt);
+  const count = Number.isFinite(limit?.used) && Number.isFinite(limit?.total)
+    ? `${limit.used.toLocaleString()} / ${limit.total.toLocaleString()}`
+    : `${safePct}%`;
+  return `
+    <div class="bento-card">
+      <span class="card-label">${esc(label)}</span>
+      <span class="weekly-value" style="color: ${color.circle}; font-size: 24px;">${hasPct ? count : '—'}</span>
+      ${hasPct ? `<div class="progress-bar-container"><div class="progress-bar-fill" style="width:${safePct}%;background:${color.bar};"></div></div>` : ''}
+      <span class="reset-text">${reset ? `Resets in ${reset}` : limit?.exhausted ? 'Limit reached' : 'Reset time unavailable'}</span>
+    </div>`;
+}
+
+function triggerOpenAIRefresh(service) {
+  const btn = document.getElementById('refresh-btn');
+  if (!btn || btn.classList.contains('loading')) return;
+  btn.classList.add('loading');
+  btn.innerHTML = `${refreshIcon} <span>Refreshing...</span>`;
+  chrome.runtime.sendMessage({ type: 'TRIGGER_SERVICE_REFRESH', service })
+    .then(response => {
+      if (!response?.success) {
+        btn.innerHTML = `${refreshIcon} <span>${response?.error === 'PAGE_REQUIRED' ? 'Open ChatGPT first' : 'Failed to refresh'}</span>`;
+        setTimeout(() => {
+          btn.classList.remove('loading');
+          btn.innerHTML = `${refreshIcon} <span>Refresh ${service === 'codex' ? 'Codex' : 'ChatGPT'} Data</span>`;
+        }, 1800);
+      } else {
+        btn.classList.remove('loading');
+        btn.innerHTML = `${refreshIcon} <span>Refresh ${service === 'codex' ? 'Codex' : 'ChatGPT'} Data</span>`;
+      }
+    })
+    .catch(() => {
+      btn.classList.remove('loading');
+      btn.innerHTML = `${refreshIcon} <span>Failed to refresh</span>`;
+    });
+}
+
+function renderOpenAIDashboard(service, data) {
+  const root = document.getElementById('root');
+  const name = service === 'codex' ? 'Codex' : 'ChatGPT';
+  const usageUrl = service === 'codex' ? 'https://chatgpt.com/codex/settings/usage' : 'https://chatgpt.com/';
+
+  if (!data || data.error === 'LOGIN_REQUIRED') {
+    const message = data?.error === 'LOGIN_REQUIRED' ? 'Sign in to ChatGPT to load usage.' : `No ${name} data found yet.`;
+    root.innerHTML = `
+      <div class="app-container">
+        <div class="header"><div id="service-toggle-placeholder"></div><button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme"></button></div>
+        <div class="bento-card"><div class="empty-view"><span>${message}</span><a href="${usageUrl}" target="_blank">Open ${name} →</a></div></div>
+        <button class="btn-refresh" id="refresh-btn" type="button">${refreshIcon} <span>Refresh ${name} Data</span></button>
+        <div class="footer-row"><button class="footer-link" id="settings-btn" type="button">Settings</button><a class="footer-link" href="${usageUrl}" target="_blank">Open ${name} →</a></div>
+      </div>`;
+  } else {
+    const limits = service === 'codex'
+      ? Object.values(data.limits || {})
+      : (data.quotas || []);
+    const cards = limits.length
+      ? limits.map((limit, index) => openAILimitCard(limit.label || `Limit ${index + 1}`, limit)).join('')
+      : `<div class="bento-card"><div class="empty-view"><span>${service === 'chatgpt' ? 'No measurable ChatGPT quota is exposed for this account. Plan details are still tracked.' : 'Codex usage is not available for this account.'}</span></div></div>`;
+    let credits = '';
+    if (service === 'codex' && data.credits) {
+      const value = data.credits.unlimited ? 'Unlimited' : data.credits.balance != null ? data.credits.balance.toLocaleString() : 'Available';
+      credits = `<div class="bento-card extra-charges-card"><div class="extra-charges-left"><span class="card-label">Credits</span><span class="extra-charges-val">${esc(value)}</span></div><div class="extra-charges-badge">Local account data</div></div>`;
+    }
+    root.innerHTML = `
+      <div class="app-container">
+        <div class="header"><div id="service-toggle-placeholder"></div><button id="theme-toggle" class="theme-toggle-btn" title="Toggle Theme"></button></div>
+        ${cards}${credits}${openAIPlanDetails(data)}
+        <button class="btn-refresh" id="refresh-btn" type="button">${refreshIcon} <span>Refresh ${name} Data</span></button>
+        <div class="footer-row"><button class="footer-link" id="settings-btn" type="button">Settings</button><a class="footer-link" href="${usageUrl}" target="_blank">Open ${name} →</a></div>
+      </div>`;
+  }
+  setupThemeToggle();
+  document.getElementById('settings-btn').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  document.getElementById('refresh-btn').addEventListener('click', () => triggerOpenAIRefresh(service));
+}
+
+function renderUI(activeService, usage, copilotUsage, showCopilot, usageByService = {}, showChatGPT = true, showCodex = true) {
   const copilotEnabled = showCopilot !== false;
-  const svc = (activeService === 'copilot' && copilotEnabled) ? 'copilot' : 'claude';
+  const chatgptEnabled = showChatGPT !== false;
+  const codexEnabled = showCodex !== false;
+  const enabled = ['claude'];
+  if (chatgptEnabled) enabled.push('chatgpt');
+  if (codexEnabled) enabled.push('codex');
+  if (copilotEnabled) enabled.push('copilot');
+  const svc = enabled.includes(activeService) ? activeService : 'claude';
+  const services = {
+    claude: usageByService.claude || usage,
+    chatgpt: usageByService.chatgpt,
+    codex: usageByService.codex,
+    copilot: usageByService.copilot || copilotUsage,
+  };
 
   if (svc === 'copilot') {
-    renderCopilotDashboard(copilotUsage);
+    renderCopilotDashboard(services.copilot);
+  } else if (svc === 'chatgpt' || svc === 'codex') {
+    renderOpenAIDashboard(svc, services[svc]);
   } else {
-    renderClaudeDashboard(usage);
+    renderClaudeDashboard(services.claude);
   }
 
   // Insert toggle switch into placeholder (both dashboards render one)
@@ -733,42 +844,40 @@ function renderUI(activeService, usage, copilotUsage, showCopilot) {
   if (placeholder) {
     const toggle = document.createElement('div');
     toggle.className = 'service-toggle';
-    toggle.innerHTML = copilotEnabled
-      ? `<button class="service-btn ${svc === 'claude' ? 'active' : ''}" id="btn-claude">Claude</button>
-         <button class="service-btn ${svc === 'copilot' ? 'active' : ''}" id="btn-copilot">Copilot <span class="beta-badge">beta</span></button>`
-      : `<button class="service-btn active" id="btn-claude">Claude</button>`;
+    toggle.innerHTML = enabled.map(service => {
+      const labels = { claude: 'Claude', chatgpt: 'ChatGPT', codex: 'Codex', copilot: 'Copilot' };
+      return `<button class="service-btn ${svc === service ? 'active' : ''}" id="btn-${service}">${labels[service]}</button>`;
+    }).join('');
     placeholder.replaceWith(toggle);
 
     document.getElementById('btn-claude').addEventListener('click', () => {
       chrome.storage.local.set({ activeService: 'claude' });
     });
-    if (copilotEnabled) {
-      document.getElementById('btn-copilot').addEventListener('click', () => {
-        chrome.storage.local.set({ activeService: 'copilot' });
-      });
-    }
+    enabled.filter(service => service !== 'claude').forEach(service => {
+      document.getElementById(`btn-${service}`).addEventListener('click', () => chrome.storage.local.set({ activeService: service }));
+    });
   }
 }
 
 let _renderTimer = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.usage || changes.copilotUsage || changes.activeService || changes.showCopilot) {
+  if (changes.usage || changes.copilotUsage || changes.usageByService || changes.activeService || changes.showCopilot || changes.showChatGPT || changes.showCodex) {
     clearTimeout(_renderTimer);
     _renderTimer = setTimeout(() => {
-      chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'showCopilot'], (data) => {
-        renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot);
+      chrome.storage.local.get(['usage', 'copilotUsage', 'usageByService', 'activeService', 'showCopilot', 'showChatGPT', 'showCodex'], (data) => {
+        renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot, data.usageByService, data.showChatGPT, data.showCodex);
       });
     }, 150);
   }
 });
 
 // Initial draw
-chrome.storage.local.get(['usage', 'copilotUsage', 'activeService', 'theme', 'showCopilot'], (data) => {
+chrome.storage.local.get(['usage', 'copilotUsage', 'usageByService', 'activeService', 'theme', 'showCopilot', 'showChatGPT', 'showCodex'], (data) => {
   if (data.theme === 'light') {
     document.body.classList.add('light-theme');
   } else {
     document.body.classList.remove('light-theme');
   }
-  renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot);
+  renderUI(data.activeService || 'claude', data.usage, data.copilotUsage, data.showCopilot, data.usageByService, data.showChatGPT, data.showCodex);
 });

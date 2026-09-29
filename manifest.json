@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "AI Usage Tracker",
-  "version": "1.1",
-  "description": "Tracks Claude and GitHub Copilot usage — limits, plan details, and reset times always visible.",
+  "version": "1.2",
+  "description": "Tracks Claude, ChatGPT, Codex, and GitHub Copilot usage — limits, plans, credits, and reset times.",
   "permissions": ["storage", "alarms", "tabs", "notifications"],
-  "host_permissions": ["https://claude.ai/*", "https://github.com/*"],
+  "host_permissions": ["https://claude.ai/*", "https://chatgpt.com/*", "https://github.com/*"],
   "content_scripts": [
     {
       "matches": ["https://claude.ai/*"],
@@ -14,6 +14,11 @@
     {
       "matches": ["https://github.com/settings/*"],
       "js": ["content_github.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["content_openai.js"],
       "run_at": "document_idle"
     }
   ],
